@@ -91,7 +91,7 @@ format_partner_since <- function(created_date) {
   paste0(format(created_date, "%B %Y"), " \u2014 ", yrs, if (yrs == 1) " year" else " years")
 }
 
-cat_cols <- grep("^Category\\.", names(orgs), value = TRUE)
+cat_cols <- grep("^Category\\.[0-9]+$", names(orgs), value = TRUE)
 orgs <- orgs |>
   mutate(
     Categories = apply(orgs[, cat_cols], 1, function(x) {
@@ -167,6 +167,30 @@ read_fy <- function(sheet) {
 }
 
 projects <- bind_rows(read_fy("FY25"), read_fy("FY26"))
+
+# ── Aggregated matches: one row per actual match ────────────────────────────
+# The source spreadsheet has one row per (Org, Project, FY, skill-area tag),
+# so a single project tagged with 3 skill areas shows up as 3 separate rows.
+# `projects` above stays in that raw long format (useful for tallying tag
+# frequency). `projects_agg` collapses it back down to one row per real
+# match/project, combining the skill areas (and forms of engagement) that
+# applied to it into single semicolon-separated fields - this is what
+# de-duplicated match counts and the org detail panel's match cards use.
+projects_agg <- projects |>
+  mutate(skill_group = skill_to_group[Category]) |>
+  group_by(Org, Project, FY) |>
+  summarise(
+    Completed = if (all(is.na(Completed))) as.Date(NA) else min(Completed, na.rm = TRUE),
+    Skill.Areas = {
+      vals <- unique(na.omit(skill_group))
+      if (length(vals) == 0) NA_character_ else paste(sort(vals), collapse = "; ")
+    },
+    Forms.of.Engagement = {
+      vals <- unique(Offering[!is.na(Offering) & Offering != ""])
+      if (length(vals) == 0) NA_character_ else paste(sort(vals), collapse = "; ")
+    },
+    .groups = "drop"
+  )
 
 # ── Map data ──────────────────────────────────────────────────────────────────
 
@@ -295,27 +319,39 @@ priority_counts <- sort(table(unlist(org_priority_groups)), decreasing = TRUE)
 top3_priorities <- head(priority_counts, 3)
 
 # -- Matches leaderboard (all-time, from the FY25+FY26 matches data) -----
-matches_leaderboard <- projects |>
+# Uses projects_agg (one row per real match) rather than the raw long-format
+# `projects`, so a project tagged with 3 skill areas counts as 1 match here,
+# not 3.
+matches_leaderboard <- projects_agg |>
   count(Org, name = "Matches") |>
   arrange(desc(Matches)) |>
   slice_head(n = 10)
 
 # -- Last-2-FY summary -----------------------------------------------------
-recent_matches   <- projects |> filter(FY %in% recent_fys)
-n_recent_matches <- nrow(recent_matches)
+recent_matches_agg <- projects_agg |> filter(FY %in% recent_fys)
+n_recent_matches    <- nrow(recent_matches_agg)
 
-recent_by_fy <- recent_matches |> count(FY, name = "n")
+recent_by_fy <- recent_matches_agg |> count(FY, name = "n")
 
-recent_matches_grouped <- recent_matches |>
-  left_join(orgs |> select(Account.Name, primary_group), by = c("Org" = "Account.Name")) |>
-  mutate(skill_group = skill_to_group[Category])
+recent_matches_grouped <- recent_matches_agg |>
+  left_join(orgs |> select(Account.Name, primary_group), by = c("Org" = "Account.Name"))
 
-top_priorities_recent  <- recent_matches_grouped |>
+# Each match counts once per priority/skill/engagement value it actually
+# has - a project with 2 skill areas contributes to 2 buckets below, but a
+# project with 1 skill area doesn't get double-counted just because its
+# source rows once did.
+top_priorities_recent <- recent_matches_grouped |>
   filter(!is.na(primary_group)) |> count(primary_group, name = "n") |> arrange(desc(n))
-top_skills_recent       <- recent_matches_grouped |>
-  filter(!is.na(skill_group)) |> count(skill_group, name = "n") |> arrange(desc(n))
-top_engagement_recent   <- recent_matches_grouped |>
-  filter(!is.na(Offering) & Offering != "") |> count(Offering, name = "n") |> arrange(desc(n))
+
+top_skills_recent <- recent_matches_grouped |>
+  filter(!is.na(Skill.Areas)) |>
+  tidyr::separate_rows(Skill.Areas, sep = "; ") |>
+  count(Skill.Areas, name = "n") |> arrange(desc(n))
+
+top_engagement_recent <- recent_matches_grouped |>
+  filter(!is.na(Forms.of.Engagement)) |>
+  tidyr::separate_rows(Forms.of.Engagement, sep = "; ") |>
+  count(Forms.of.Engagement, name = "n") |> arrange(desc(n))
 
 # A distinct accent color per geographic bucket, reusing the style guide's
 # secondary palette so this ties visually to the rest of the U-M brand.
@@ -548,7 +584,8 @@ app_theme <- bs_theme(
 
 ui <- page_navbar(
   title    = tags$span(
-    style = "display:flex; align-items:center; gap:16px;",
+    style = "display:flex; align-items:end; gap:16px;",
+    imageOutput("ginsberg", inline = TRUE),
     tags$span(
       style = "font-weight:700; letter-spacing:-0.2px; color:rgba(255,255,255,0.85);",
       "Community Partners"
@@ -586,7 +623,7 @@ ui <- page_navbar(
       /* ── Community Priority / Engagement / Skill / SCU listboxes ──────── */
       #priority_filter, #engagement_filter, #skill_filter, #scu_filter {
         border-radius: 8px !important; border: 1px solid #dde2e8 !important;
-        font-size: 0.82rem; overflow: hidden;
+        font-size: 0.82rem; overflow-y: auto;
       }
       #priority_filter option, #engagement_filter option,
       #skill_filter option, #scu_filter option { padding: 7px 10px; line-height: 1.5; }
@@ -905,7 +942,7 @@ ui <- page_navbar(
       style = "max-width:900px; margin:0 auto; padding:8px 4px 24px;",
       div(
         class = "instruction-box", style = "margin-bottom:18px;",
-        tags$strong("Draft content."), "This needs significant cleaning."
+        tags$strong("Draft content."), " VERIFICATION NEEDED."
       ),
       card(
         card_body(
@@ -1087,8 +1124,7 @@ ui <- page_navbar(
       style = "max-width:800px; margin:0 auto; padding:8px 4px 24px;",
       div(
         class = "instruction-box", style = "margin-bottom:18px;",
-        tags$strong("Draft content."), "Skeleton that needs fleshing out.",
-        " Anything in brackets is a placeholder \u2014 real details needed before final publishing."
+        tags$strong("Draft content."), " VERIFICATION NEEDED."
       ),
       card(
         card_body(
@@ -1111,11 +1147,12 @@ ui <- page_navbar(
           
           tags$div(class = "infographic-section-title", style = "margin-top:24px;", "Credits"),
           field_table(list(
-            c("Built by", "[Placeholder \u2014 who owns this tool, e.g. \u201cGinsberg Center Data & Evaluation Team\u201d]"),
+            c("Built by", "[Placeholder \u2014 add the name(s) or team who owns this tool, e.g. \u201cGinsberg Center Data & Evaluation Team\u201d]"),
             c("Data sources", "Salesforce account records; the FY25\u2013FY26 match-tracking spreadsheet (\u201cMapping CP Network.xlsx\u201d)"),
+            c("Categorization", "Community Priority and Skill Area groupings developed in partnership with Ginsberg Center staff (see Data Dictionary tab)"),
             c("Design", "Built to the Ginsberg Center / University of Michigan brand style guide"),
             c("Built with", "R, Shiny, leaflet, plotly, bslib, and DT"),
-            c("Questions or corrections", "[Placeholder]")
+            c("Questions or corrections", "[Placeholder \u2014 add a contact email or feedback link.]")
           ))
         )
       )
@@ -1126,6 +1163,13 @@ ui <- page_navbar(
 # ── Server ────────────────────────────────────────────────────────────────────
 
 server <- function(input, output, session) {
+  # Logo Output
+  output$ginsberg <- renderImage({
+    
+    list(src = "Edward-Ginsberg-Center_web-logo.png",
+         height = 50)
+    
+  }, deleteFile = F)
   
   # Does an org match any selected focus area group?
   org_matches <- function(org_row, selected_groups) {
@@ -1329,7 +1373,7 @@ server <- function(input, output, session) {
     grp     <- org$primary_group
     grp_col <- if (!is.na(grp)) group_pal(grp) else "#cccccc"
     
-    org_projects <- projects |> filter(Org == org_name) |> arrange(FY, Project)
+    org_projects <- projects_agg |> filter(Org == org_name) |> arrange(FY, Project)
     
     addr_parts <- c(
       org$Billing.Address.Line.1,
@@ -1339,7 +1383,8 @@ server <- function(input, output, session) {
     )
     addr <- paste(addr_parts[addr_parts != "" & !is.na(addr_parts)], collapse = "\n")
     
-    # Build match cards
+    # Build match cards - one per actual match (see projects_agg above),
+    # not one per skill-area tag that match happened to carry.
     if (nrow(org_projects) == 0) {
       proj_html <- tags$p(
         style = "color:#aaa; font-style:italic; font-size:0.82rem;",
@@ -1352,17 +1397,13 @@ server <- function(input, output, session) {
         fy_txt <- if (p$FY == "FY25") "#fff"    else "#1a1a1a"
         tags$div(
           class = paste("match-card", tolower(p$FY)),
-          # Top row: FY badge + category + date
+          # Top row: FY badge + date
           tags$div(
             style = "display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;",
-            tags$div(
-              tags$span(
-                style = paste0("background:", fy_bg, ";color:", fy_txt,
-                               ";padding:2px 9px;border-radius:20px;font-size:0.68rem;font-weight:700;"),
-                p$FY
-              ),
-              if (!is.na(p$Category))
-                tags$span(style = "font-size:0.69rem; color:#888; margin-left:6px;", p$Category)
+            tags$span(
+              style = paste0("background:", fy_bg, ";color:", fy_txt,
+                             ";padding:2px 9px;border-radius:20px;font-size:0.68rem;font-weight:700;"),
+              p$FY
             ),
             if (!is.na(p$Completed))
               tags$span(
@@ -1372,12 +1413,20 @@ server <- function(input, output, session) {
           ),
           # Project title
           tags$p(
-            style = "font-size:0.85rem; font-weight:600; color:#1a1a1a; margin:0 0 3px 0;",
+            style = "font-size:0.85rem; font-weight:600; color:#1a1a1a; margin:0 0 5px 0;",
             p$Project
           ),
-          # Offering
-          if (!is.na(p$Offering))
-            tags$p(style = "font-size:0.78rem; color:#666; margin:0;", p$Offering)
+          # Aggregated skill areas + form of engagement for this match
+          if (!is.na(p$Skill.Areas))
+            tags$p(
+              style = "font-size:0.76rem; color:#666; margin:0 0 2px 0;",
+              tags$strong(style = "color:#00274C;", "Skill Areas: "), p$Skill.Areas
+            ),
+          if (!is.na(p$Forms.of.Engagement))
+            tags$p(
+              style = "font-size:0.76rem; color:#666; margin:0;",
+              tags$strong(style = "color:#00274C;", "Form of Engagement: "), p$Forms.of.Engagement
+            )
         )
       })
       proj_html <- tagList(rows)
@@ -1606,12 +1655,12 @@ server <- function(input, output, session) {
   })
   
   output$skill_recent_bar <- renderPlotly({
-    make_horiz_bar(top_skills_recent, "skill_group", "n",
+    make_horiz_bar(top_skills_recent, "Skill.Areas", "n",
                    colors = bar_colors_for(nrow(top_skills_recent)), unit_label = "match")
   })
   
   output$engagement_recent_bar <- renderPlotly({
-    make_horiz_bar(top_engagement_recent, "Offering", "n",
+    make_horiz_bar(top_engagement_recent, "Forms.of.Engagement", "n",
                    colors = bar_colors_for(nrow(top_engagement_recent)), unit_label = "match")
   })
   
