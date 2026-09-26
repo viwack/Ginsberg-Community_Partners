@@ -434,6 +434,25 @@ make_donut <- function(df, label_col, val_col, colors) {
     config(displayModeBar = FALSE)
 }
 
+# Renders the small chip row showing which values are currently selected in
+# a multi-select filter. `colors` (optional, named vector) gives per-value
+# background colors (used for Community Priority, to match its brand
+# colors elsewhere); otherwise all chips use the same neutral style.
+selected_tags_ui <- function(values, colors = NULL) {
+  if (is.null(values) || length(values) == 0) return(NULL)
+  tags$div(
+    class = "selected-tags-row",
+    lapply(values, function(v) {
+      style <- if (!is.null(colors) && !is.na(colors[v])) {
+        paste0("background:", colors[v], "; color:#ffffff;")
+      } else {
+        ""
+      }
+      tags$span(class = "selected-tag", style = style, v)
+    })
+  )
+}
+
 stat_tile <- function(number, label, color = "#00274C") {
   tags$div(
     class = "stat-tile",
@@ -585,9 +604,9 @@ app_theme <- bs_theme(
 ui <- page_navbar(
   title    = tags$span(
     style = "display:flex; align-items:end; gap:16px;",
-    imageOutput("ginsberg", inline = TRUE),
+    tags$img(src = "Edward-Ginsberg-Center_web-logo.png", height = "50", style = "display:block; margin-left: 70px;"),
     tags$span(
-      style = "font-weight:700; letter-spacing:-0.2px; color:rgba(255,255,255,0.85);",
+      style = "font-weight:700; letter-spacing:-0.2px; color:rgba(255,255,255,0.85); font-size:1.05rem;",
       "Community Partners"
     )
   ),
@@ -598,6 +617,14 @@ ui <- page_navbar(
   tags$head(
     tags$style(HTML("
 
+      /* ── Smoother sidebar collapse/expand ──────────────────────────────
+         bslib exposes these as CSS variables specifically so the built-in
+         collapse animation can be tuned without fighting its internals. */
+      :root {
+        --bslib-sidebar-transition-duration: 0.32s;
+        --bslib-sidebar-transition-easing-x: cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
       /* ── Global text size ─────────────────────────────────────────────
          Almost every font-size in this app is set in rem, which is always
          relative to this root <html> size. Bumping it here scales all of
@@ -606,9 +633,47 @@ ui <- page_navbar(
          hardcoded rem value individually. */
       html { font-size: 17px; }
 
-      /* ── Navbar ────────────────────────────────────────────────────── */
-      .navbar { border-bottom: 3px solid #FFCB05; box-shadow: 0 2px 10px rgba(0,0,0,0.18); }
-      .navbar-nav .nav-link { font-weight: 500; font-size: 0.87rem; padding: 0.5rem 1rem; }
+      /* ── Navbar: tall navy logo band + maize nav-link band underneath ──
+         (mirrors the Ginsberg Center site's own header structure) */
+      .navbar {
+        padding: 0 !important;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.18);
+      }
+      .navbar > .container-fluid {
+        flex-wrap: wrap;
+        padding: 0 !important;
+        align-items: stretch;
+      }
+      /* Row 1: navy brand/logo band - tall, full width */
+      .navbar-brand {
+        width: 100%;
+        margin: 0 !important;
+        padding: 26px 72px !important;
+        background: #00274C;
+      }
+      /* Row 2: maize nav-link band - full width, sits under the logo band */
+      .navbar-collapse {
+        width: 100%;
+        background: #FFCB05;
+        border-top: 3px solid #E8B900;
+      }
+      .navbar-nav {
+        width: 100%;
+        padding: 0 55px;
+      }
+      .navbar-nav .nav-link {
+        font-weight: 700; font-size: 0.87rem; padding: 0.85rem 1.1rem;
+        color: #1a1a1a !important;
+      }
+      .navbar-nav .nav-link:hover { color: #00274C !important; background: rgba(0,0,0,0.05); }
+      .navbar-nav .nav-link.active {
+        color: #00274C !important;
+        background: rgba(0,0,0,0.07);
+        text-decoration: underline;
+        text-decoration-color: #00274C;
+        text-decoration-thickness: 2px;
+      }
+      .navbar-toggler { margin: 20px 32px; }
 
       /* ── Cards ──────────────────────────────────────────────────────── */
       .card { border: none !important; box-shadow: 0 2px 14px rgba(0,0,0,0.07); }
@@ -716,6 +781,66 @@ ui <- page_navbar(
       }
       .leaflet-marker-cluster { cursor: pointer !important; }
 
+      /* ── Selected-value chips under each multi-select filter ─────────── */
+      .selected-tags-row {
+        display: flex; flex-wrap: wrap; gap: 6px;
+        margin-top: 8px; margin-bottom: 4px;
+      }
+      .selected-tag {
+        display: inline-block; font-size: 0.71rem; font-weight: 600;
+        padding: 3px 10px; border-radius: 20px;
+        background: #eef1f5; color: #00274C;
+        white-space: nowrap;
+      }
+
+      /* ── Live result count pill (top of Filters section) ─────────────── */
+      .result-count-pill {
+        font-size: 0.82rem; color: #444; background: #f0f4f8;
+        border-radius: 8px; padding: 8px 12px; margin-bottom: 14px;
+      }
+      .result-count-pill strong { color: #00274C; font-size: 0.95rem; }
+      .result-count-pill.result-count-zero {
+        background: #fdf3e7; color: #9a5b00; font-weight: 600;
+      }
+
+      /* ── Org detail drawer: overlays the map's right edge instead of
+             permanently reserving column width ─────────────────────────── */
+      .org-detail-drawer {
+        position: absolute;
+        top: 0; right: 0; bottom: 0;
+        width: 400px;
+        max-width: 92%;
+        background: #ffffff;
+        box-shadow: -6px 0 20px rgba(0,0,0,0.18);
+        z-index: 1200;
+        overflow-y: auto;
+        padding: 18px 20px;
+        border-left: 1px solid #e4e8ee;
+        transform: translateX(100%);
+        opacity: 0;
+        pointer-events: none;
+        transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1),
+                    opacity 0.24s ease;
+      }
+      .org-detail-drawer.open {
+        transform: translateX(0);
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .map-hint-pill {
+        position: absolute;
+        left: 16px; bottom: 16px;
+        z-index: 900;
+        background: rgba(255,255,255,0.95);
+        border: 1px solid #e4e8ee;
+        border-radius: 20px;
+        padding: 7px 14px;
+        font-size: 0.78rem;
+        color: #555;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+        pointer-events: none;
+      }
+
       /* ── Close button under the org detail panel ──────────────────────── */
       .close-panel-btn {
         display: inline-flex;
@@ -800,6 +925,16 @@ ui <- page_navbar(
           }
         });
       });
+
+      // Slide the org detail drawer open/closed. The container itself is
+      // always in the DOM (see #org-detail-drawer) - only this class
+      // toggles, which is what lets the CSS transition play both ways
+      // instead of the panel just popping in/out.
+      Shiny.addCustomMessageHandler('toggleOrgDrawer', function(open) {
+        var el = document.getElementById('org-detail-drawer');
+        if (!el) return;
+        el.classList.toggle('open', open);
+      });
     "))
   ),
   
@@ -813,8 +948,30 @@ ui <- page_navbar(
         width   = 390,
         open    = "open",
         padding = "16px",
-        uiOutput("org_panel"),
-        tags$hr(style = "margin: 14px 0; border-color: #e8edf2;"),
+        div(class = "about-box",
+            div(class = "about-title", "About the Map"),
+            tags$p("The Ginsberg Center began tracking community partner relationships in Salesforce in 2017.
+                  The data on this map comes from those Salesforce records, so the earliest relationship
+                  that may appear is January 2017."),
+            tags$p("This map represents relationships documented in our Salesforce system and is not a
+                  complete history of the Ginsberg Center\u2019s work with community partners. Ginsberg
+                  Center has worked with communities and organizations for many years prior to adopting
+                  Salesforce, and some of our current relationships began before 2017. Likewise, some
+                  former community partners may no longer be active or may not appear because of how
+                  relationships are recorded in Salesforce."),
+            tags$p("As a result, the number of years shown for a relationship may not reflect the full
+                  length of our relationship with a community partner. A relationship that began before
+                  2017, for example, may appear as beginning in 2017 because that is the earliest point
+                  represented in this dataset."),
+            tags$p("We share this map as a way to visualize the community partnerships documented in our
+                  current data, not to define the full history, depth, or significance of Ginsberg
+                  Center\u2019s relationships with communities.")
+        ),
+        tags$div(class = "instruction-box", style = "margin-bottom:18px;",
+                 tags$strong("Click a marker"), " on the map to view organization details and matched projects."
+        ),
+        tags$div(class = "infographic-section-title", "Filters"),
+        uiOutput("map_result_count"),
         tags$p(class = "sidebar-section-label", "Partner Status"),
         radioButtons(
           "status_filter", label = NULL,
@@ -843,28 +1000,7 @@ ui <- page_navbar(
           choices   = names(group_map), selected = NULL,
           multiple  = TRUE, selectize = FALSE, size = 8, width = "100%"
         ),
-        tags$hr(style = "margin: 14px 0; border-color: #e8edf2;"),
-        tags$div(
-          style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;",
-          tags$p(class = "sidebar-section-label", style = "margin:0;", "Form of Engagement"),
-          if (length(engagement_choices) > 0)
-            actionLink("clear_engagement_filter", "Clear all",
-                       style = "font-size:0.73rem; color:#aaa; text-decoration:none;")
-        ),
-        if (length(engagement_choices) > 0) {
-          tagList(
-            tags$p(
-              style = "font-size:0.72rem; color:#bbb; margin-bottom:8px; line-height:1.4;",
-              "Hold Ctrl (Windows) or \u2318 Cmd (Mac) to select multiple."
-            ),
-            selectInput(
-              "engagement_filter", label = NULL,
-              choices = engagement_choices, selected = NULL,
-              multiple = TRUE, selectize = FALSE, size = 5, width = "100%"
-            )
-          )
-        } else
-          tags$p(style = "font-size:0.78rem;color:#bbb;font-style:italic;", "No match data available yet."),
+        uiOutput("priority_selected_tags"),
         tags$hr(style = "margin: 14px 0; border-color: #e8edf2;"),
         tags$div(
           style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;",
@@ -883,17 +1019,44 @@ ui <- page_navbar(
               "skill_filter", label = NULL,
               choices = skill_choices, selected = NULL,
               multiple = TRUE, selectize = FALSE, size = 5, width = "100%"
-            )
+            ),
+            uiOutput("skill_selected_tags")
+          )
+        } else
+          tags$p(style = "font-size:0.78rem;color:#bbb;font-style:italic;", "No match data available yet."),
+        tags$hr(style = "margin: 14px 0; border-color: #e8edf2;"),
+        tags$div(
+          style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;",
+          tags$p(class = "sidebar-section-label", style = "margin:0;", "Form of Engagement"),
+          if (length(engagement_choices) > 0)
+            actionLink("clear_engagement_filter", "Clear all",
+                       style = "font-size:0.73rem; color:#aaa; text-decoration:none;")
+        ),
+        if (length(engagement_choices) > 0) {
+          tagList(
+            tags$p(
+              style = "font-size:0.72rem; color:#bbb; margin-bottom:8px; line-height:1.4;",
+              "Hold Ctrl (Windows) or \u2318 Cmd (Mac) to select multiple."
+            ),
+            selectInput(
+              "engagement_filter", label = NULL,
+              choices = engagement_choices, selected = NULL,
+              multiple = TRUE, selectize = FALSE, size = 5, width = "100%"
+            ),
+            uiOutput("engagement_selected_tags")
           )
         } else
           tags$p(style = "font-size:0.78rem;color:#bbb;font-style:italic;", "No match data available yet."),
         tags$hr(style = "margin: 14px 0; border-color: #e8edf2;"),
         tags$p(class = "sidebar-section-label", "School / College / Unit"),
         if (length(scu_choices) > 0)
-          selectInput(
-            "scu_filter", label = NULL,
-            choices = scu_choices, selected = NULL,
-            multiple = TRUE, selectize = FALSE, size = 5, width = "100%"
+          tagList(
+            selectInput(
+              "scu_filter", label = NULL,
+              choices = scu_choices, selected = NULL,
+              multiple = TRUE, selectize = FALSE, size = 5, width = "100%"
+            ),
+            uiOutput("scu_selected_tags")
           )
         else
           tags$p(
@@ -901,9 +1064,21 @@ ui <- page_navbar(
             "Coming soon \u2014 this filter will activate automatically once that data is added."
           )
       ),
-      card(
-        full_screen = TRUE,
-        leafletOutput("map", height = "100%")
+      div(
+        style = "position:relative; height:100%; display:flex;",
+        card(
+          full_screen = TRUE, style = "flex:1; min-width:0;",
+          leafletOutput("map", height = "100%")
+        ),
+        tags$div(
+          id    = "org-detail-drawer",
+          class = "org-detail-drawer",
+          uiOutput("org_side_panel")
+        ),
+        tags$div(
+          class = "map-hint-pill",
+          "\U0001F4CD Click a marker to see account details"
+        )
       )
     )
   ),
@@ -940,10 +1115,6 @@ ui <- page_navbar(
     "Data Dictionary",
     div(
       style = "max-width:900px; margin:0 auto; padding:8px 4px 24px;",
-      div(
-        class = "instruction-box", style = "margin-bottom:18px;",
-        tags$strong("Draft content."), " VERIFICATION NEEDED."
-      ),
       card(
         card_body(
           accordion(
@@ -1122,10 +1293,6 @@ ui <- page_navbar(
     "About",
     div(
       style = "max-width:800px; margin:0 auto; padding:8px 4px 24px;",
-      div(
-        class = "instruction-box", style = "margin-bottom:18px;",
-        tags$strong("Draft content."), " VERIFICATION NEEDED."
-      ),
       card(
         card_body(
           tags$div(class = "infographic-section-title", "About This Map"),
@@ -1147,7 +1314,7 @@ ui <- page_navbar(
           
           tags$div(class = "infographic-section-title", style = "margin-top:24px;", "Credits"),
           field_table(list(
-            c("Built by", "[Placeholder \u2014 add the name(s) or team who owns this tool, e.g. \u201cGinsberg Center Data & Evaluation Team\u201d]"),
+            c("Built by", "\u201cGinsberg Center Data & Evaluation Team\u201d"),
             c("Data sources", "Salesforce account records; the FY25\u2013FY26 match-tracking spreadsheet (\u201cMapping CP Network.xlsx\u201d)"),
             c("Categorization", "Community Priority and Skill Area groupings developed in partnership with Ginsberg Center staff (see Data Dictionary tab)"),
             c("Design", "Built to the Ginsberg Center / University of Michigan brand style guide"),
@@ -1164,13 +1331,6 @@ ui <- page_navbar(
 
 server <- function(input, output, session) {
   # Logo Output
-  output$ginsberg <- renderImage({
-    
-    list(src = "Edward-Ginsberg-Center_web-logo.png",
-         height = 50)
-    
-  }, deleteFile = F)
-  
   # Does an org match any selected focus area group?
   org_matches <- function(org_row, selected_groups) {
     selected_cats <- unlist(group_map[selected_groups], use.names = FALSE)
@@ -1204,6 +1364,39 @@ server <- function(input, output, session) {
         title   = "Reset view",
         onClick = JS("function(btn, map){ map.setView([42.4, -83.5], 9); }")
       ))
+  })
+  
+  # ── Live result count, shown at the top of the Filters section ───────────
+  result_count <- reactiveVal(nrow(map_orgs))
+  
+  output$map_result_count <- renderUI({
+    n <- result_count()
+    if (n == 0) {
+      tags$div(
+        class = "result-count-pill result-count-zero",
+        "\u26A0\uFE0F No accounts match these filters"
+      )
+    } else {
+      tags$div(
+        class = "result-count-pill",
+        tags$strong(format(n, big.mark = ",")), "results."
+      )
+    }
+  })
+  
+  # ── Selected-value chips (so a selection doesn't visually disappear once
+  #    you scroll to a different filter or click into another listbox) ────
+  output$priority_selected_tags <- renderUI({
+    selected_tags_ui(input$priority_filter, colors = group_colors)
+  })
+  output$skill_selected_tags <- renderUI({
+    selected_tags_ui(input$skill_filter)
+  })
+  output$engagement_selected_tags <- renderUI({
+    selected_tags_ui(input$engagement_filter)
+  })
+  output$scu_selected_tags <- renderUI({
+    selected_tags_ui(input$scu_filter)
   })
   
   # ── Re-render markers when filters change ─────────────────────────────────
@@ -1243,7 +1436,17 @@ server <- function(input, output, session) {
       clearGroup("highlight") |>
       clearPopups()
     
+    # Nothing to plot - stop here. (Without this guard, sapply() over a
+    # zero-row data frame below returns list() instead of logical(0), and
+    # indexing a data frame with list() throws an error - that was the
+    # source of the crash when a filter combination matched nothing.)
+    if (nrow(base) == 0) {
+      result_count(0)
+      return(invisible(NULL))
+    }
+    
     if (length(selected) == 0) {
+      result_count(nrow(base))
       leafletProxy("map") |>
         addCircleMarkers(
           data         = base,
@@ -1264,6 +1467,7 @@ server <- function(input, output, session) {
     } else {
       matched   <- base[sapply(seq_len(nrow(base)), function(i) org_matches(base[i, ], selected)), ]
       unmatched <- base[sapply(seq_len(nrow(base)), function(i) !org_matches(base[i, ], selected)), ]
+      result_count(nrow(matched))
       
       if (nrow(unmatched) > 0) {
         leafletProxy("map") |>
@@ -1548,39 +1752,21 @@ server <- function(input, output, session) {
     )
   }
   
-  # ── Map tab: org panel renderUI ──────────────────────────────────────────
-  output$org_panel <- renderUI({
+  # ── Map tab: right-hand detail drawer ────────────────────────────────────
+  # Overlays the map's right edge only when an account is selected, rather
+  # than permanently reserving column width the way the old left-sidebar
+  # panel did - the map stays full width until something is clicked.
+  output$org_side_panel <- renderUI({
     org_name <- selected_org()
-    
-    # ── Default / about state ──────────────────────────────────────────────
-    if (is.null(org_name)) {
-      return(div(
-        div(class = "about-box",
-            div(class = "about-title", "About the Map"),
-            tags$p("The Ginsberg Center began tracking community partner relationships in Salesforce in 2017.
-                  The data on this map comes from those Salesforce records, so the earliest relationship
-                  that may appear is January 2017."),
-            tags$p("This map represents relationships documented in our Salesforce system and is not a
-                  complete history of the Ginsberg Center\u2019s work with community partners. Ginsberg
-                  Center has worked with communities and organizations for many years prior to adopting
-                  Salesforce, and some of our current relationships began before 2017. Likewise, some
-                  former community partners may no longer be active or may not appear because of how
-                  relationships are recorded in Salesforce."),
-            tags$p("As a result, the number of years shown for a relationship may not reflect the full
-                  length of our relationship with a community partner. A relationship that began before
-                  2017, for example, may appear as beginning in 2017 because that is the earliest point
-                  represented in this dataset."),
-            tags$p("We share this map as a way to visualize the community partnerships documented in our
-                  current data, not to define the full history, depth, or significance of Ginsberg
-                  Center\u2019s relationships with communities.")
-        ),
-        div(class = "instruction-box",
-            tags$strong("Click a marker"), " on the map to view organization details and matched projects."
-        )
-      ))
-    }
-    
+    if (is.null(org_name)) return(NULL)
     build_org_detail_ui(org_name, map_orgs, "deselect_org")
+  })
+  
+  # Toggle the drawer's open/closed CSS class whenever the selection
+  # changes, rather than inserting/removing the container itself - that's
+  # what lets the slide-in/out transition actually play both ways.
+  observe({
+    session$sendCustomMessage("toggleOrgDrawer", !is.null(selected_org()))
   })
   
   # ── No-geo-data tab: table + detail panel ────────────────────────────────
