@@ -603,9 +603,11 @@ app_theme <- bs_theme(
 
 ui <- page_navbar(
   title    = tags$span(
+    class = "brand-wrap",
     style = "display:flex; align-items:end; gap:16px;",
-    tags$img(src = "Edward-Ginsberg-Center_web-logo.png", height = "50", style = "display:block; margin-left: 70px;"),
+    tags$img(id = "brand-logo", src = "Edward-Ginsberg-Center_web-logo.png", height = "50", style = "display:block; margin-left: 70px;"),
     tags$span(
+      class = "brand-text",
       style = "font-weight:700; letter-spacing:-0.2px; color:rgba(255,255,255,0.85); font-size:1.05rem;",
       "Community Partners"
     )
@@ -905,6 +907,57 @@ ui <- page_navbar(
         padding: 14px 16px; height: 100%;
       }
 
+      /* ── DT tables: let them scroll horizontally instead of overflowing
+             the viewport width on narrow screens ─────────────────────────── */
+      .dataTables_wrapper { overflow-x: auto; width: 100%; }
+
+      /* ── Mobile layout ─────────────────────────────────────────────────
+             Everything above assumes a desktop-width window (the logo
+             margin, navbar padding, and drawer width in particular are all
+             fixed px values). This breakpoint pulls those back in so the
+             page doesn't scroll sideways on a phone; bslib's own sidebar
+             (collapsible drawer) and plotly charts are already responsive
+             on their own and don't need help here. ────────────────────── */
+      @media (max-width: 768px) {
+        html { font-size: 15px; }
+
+        .navbar-brand {
+          padding: 14px 16px !important;
+        }
+        .brand-wrap { gap: 10px !important; }
+        #brand-logo {
+          height: 34px !important;
+          margin-left: 0 !important;
+        }
+        .brand-text { font-size: 0.85rem !important; }
+
+        .navbar-nav { padding: 0 10px !important; }
+        .navbar-nav .nav-link {
+          padding: 0.7rem 0.85rem !important;
+          font-size: 0.82rem !important;
+        }
+        .navbar-toggler { margin: 10px 14px !important; }
+
+        /* Org detail drawer: take the full screen instead of a fixed
+           400px panel, which would otherwise leave barely any of the
+           map visible next to it. */
+        .org-detail-drawer {
+          width: 100% !important;
+          max-width: 100% !important;
+        }
+
+        .about-box, .instruction-box { padding: 11px 13px; }
+
+        .stat-tile-row { gap: 8px; }
+        .stat-tile { flex: 1 1 45%; }
+
+        /* Give listboxes (Community Priority, Skill Area, etc.) a bit
+           less height so the sidebar doesn't turn into one long scroll
+           before you even reach the map/table on a small screen. */
+        #priority_filter { height: 140px !important; }
+        #skill_filter, #engagement_filter, #scu_filter { height: 110px !important; }
+      }
+
     ")),
     tags$script(HTML("
       $(document).ready(function() {
@@ -945,7 +998,7 @@ ui <- page_navbar(
       fillable = TRUE,
       sidebar = sidebar(
         bg      = "white",
-        width   = 390,
+        width   = 367,
         open    = "open",
         padding = "16px",
         div(class = "about-box",
@@ -982,7 +1035,7 @@ ui <- page_navbar(
           "recent_match_filter",
           label = paste0("Only show orgs with a match in the last 2 fiscal years (",
                          paste(recent_fys, collapse = " or "), ")"),
-          value = FALSE
+          value = TRUE
         ),
         tags$hr(style = "margin: 14px 0; border-color: #e8edf2;"),
         tags$div(
