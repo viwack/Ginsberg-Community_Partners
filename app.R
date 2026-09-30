@@ -999,7 +999,7 @@ ui <- page_navbar(
       sidebar = sidebar(
         bg      = "white",
         width   = 367,
-        open    = "open",
+        open    = list(desktop = "open", mobile = "closed"),
         padding = "16px",
         div(class = "about-box",
             div(class = "about-title", "About the Map"),
@@ -1144,7 +1144,7 @@ ui <- page_navbar(
       sidebar = sidebar(
         bg      = "white",
         width   = 390,
-        open    = "open",
+        open    = list(desktop = "open", mobile = "closed"),
         padding = "16px",
         uiOutput("problem_org_panel")
       ),
