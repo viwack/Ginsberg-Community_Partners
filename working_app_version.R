@@ -9,15 +9,11 @@ library(DT)
 library(plotly)
 
 # ── Data loading ──────────────────────────────────────────────────────────────
-
 orgs     <- read.csv("Accounts_wideCategories_Geocoded.csv", stringsAsFactors = FALSE)
 websites <- read.csv("websites.csv", stringsAsFactors = FALSE)
 orgs     <- orgs |> left_join(websites, by = "Account.Name")
 
 # ── Manual geocode corrections ─────────────────────────────────────────────
-# These two rows had missing/malformed source addresses that the geocoder
-# mapped to bogus fallback points (Myanmar / Italy). Patch in verified
-# addresses + coordinates until the source data itself is fixed upstream.
 fix_org <- function(data, name, addr1, city, state, zip, lat, lon) {
   idx <- which(data$Account.Name == name)
   if (length(idx) == 0) return(data)
@@ -30,6 +26,7 @@ fix_org <- function(data, name, addr1, city, state, zip, lat, lon) {
   data
 }
 
+# These two rows had missing/malformed source addresses that the geocoder arcgis failed on.
 orgs <- orgs |>
   fix_org("Detroit People's Platform",
           addr1 = "7700 Second Ave. #509", city = "Detroit", state = "MI", zip = "48202",
@@ -38,57 +35,41 @@ orgs <- orgs |>
           addr1 = "6711 Robison Ln", city = "Saline", state = "MI", zip = "48176",
           lat = 42.1934, lon = -83.7075)
 
-# Remaining accounts that still have no usable address on file. Their lat/lon
-# in the source CSV are geocoder fallback junk (not real locations), so they
-# are pulled off the map and listed separately instead of being plotted.
+# Remaining accounts that still have no usable address on file.
 no_geo_names <- c(
-  "Middle Ground", "Resource Generation", "Justice InDeed",
-  "Positive Impact for Life", "The Equitable Ann Arbor Land Trust",
-  "The McKinney Foundation", "Our Village", "Jotno Foundation",
-  "National Wild Turkey Federation - Michigan State Chapter",
-  "Refugee Garden Initiatives", "Detroit Brownie", "Breyko",
-  "Detroit Parent Network", "Ele's Place", "The Delian Club",
-  "Reproductive Freedom for All - Michigan", "Concert Music Outreach Collective",
-  "Trinity Health Community Health and Wellbeing", "Superhero Training Academy",
+  "Resource Generation", "Justice InDeed",
+  "The Equitable Ann Arbor Land Trust",
+  "Our Village", "National Wild Turkey Federation - Michigan State Chapter",
+  "Breyko", "Reproductive Freedom for All - Michigan", "Depot Town Events",
+  "Concert Music Outreach Collective", "Superhero Training Academy",
   "Voce Velata", "Greater Health Institute", "Laotian American Community of Michigan",
-  "FutureRoot", "Clubhouse Michigan", "The SunBundle Nonprofit"
+  "FutureRoot", "Huron Valley Worker Organizing and Research Center"
 )
 
 # ── Upcoming fields (not in the data yet) ──────────────────────────────────
-# Two fields are coming later: a whole-number "total matches" count per org,
-# and a Salesforce "Created Date" we'll use to show partnership length. They
-# aren't in the CSV yet, so these placeholder columns keep the rest of the
-# app (popups + detail panel below) working today and requiring NO further
-# code changes once the real data shows up - as long as the incoming CSV
-# columns end up named "Total Matches" and "Created Date" (R will read those
-# in as Total.Matches / Created.Date). If they come in under different
-# names, just update the two column names below to match.
+# A field  coming later: a whole-number "total matches" count per org.
 if (!"Total.Matches" %in% names(orgs)) {
   orgs$Total.Matches <- NA_integer_
 }
 if (!"Created.Date" %in% names(orgs)) {
   orgs$Created.Date <- as.Date(NA)
 } else {
-  # Adjust the format string once we see what Salesforce actually exports
-  # (commonly "%Y-%m-%d" or "%m/%d/%Y").
-  orgs$Created.Date <- as.Date(orgs$Created.Date, format = "%Y-%m-%d")
+  # pull the year out of the Created Date string and turns it into a 4-digit year.
+  year_part <- sub(".*/", "", orgs$Created.Date)
+  fmt <- ifelse(nchar(year_part) == 4, "%m/%d/%Y", "%m/%d/%y")
+  orgs$Created.Date <- as.Date(orgs$Created.Date, format = fmt)
 }
-# School/College/Unit is also coming later (used as a filter only - it
-# doesn't need to display anywhere, per request). Expected column name is
-# "School College Unit" -> read in as School.College.Unit.
-if (!"School.College.Unit" %in% names(orgs)) {
-  orgs$School.College.Unit <- NA_character_
+# Mission Statement backs up Description in the "About" section on an org's page when there's no description on file.
+if (!"Mission.Statement" %in% names(orgs)) {
+  orgs$Mission.Statement <- NA_character_
 }
 
-# Turns a Created Date into e.g. "March 2019 — 6 years". Returns NA (which
-# the display code below turns into a "coming soon" placeholder) until real
-# dates exist.
+# Turns a Created Date into just its year, e.g. "2017", for the "Partner Since" field. 
 format_partner_since <- function(created_date) {
   if (is.null(created_date) || length(created_date) == 0 || is.na(created_date)) {
     return(NA_character_)
   }
-  yrs <- floor(as.numeric(difftime(Sys.Date(), created_date, units = "days")) / 365.25)
-  paste0(format(created_date, "%B %Y"), " \u2014 ", yrs, if (yrs == 1) " year" else " years")
+  format(created_date, "%Y")
 }
 
 cat_cols <- grep("^Category\\.[0-9]+$", names(orgs), value = TRUE)
@@ -101,26 +82,22 @@ orgs <- orgs |>
   )
 
 # ── Focus area groups ─────────────────────────────────────────────────────────
-
 group_map <- list(
-  "Education & Youth Development"               = c("Education/Schooling","Early Childhood","Middle Childhood",
-                                                    "Adolescence","Literacy","Tutoring","Mentoring",
-                                                    "Adult Education","Postsecondary Education",
-                                                    "STEM Education and Outreach","Special Education"),
-  "Health & Wellbeing"                          = c("Health & Wellbeing","Mental Health & Substance Abuse",
-                                                    "Nutrition Accessibility","Disability Safety and Rights","Families"),
-  "Housing, Economic Opportunity & Basic Needs" = c("Poverty & Economic Opportunity","Housing Access and Affordability",
-                                                    "Food Justice","Community Gardens and Farming"),
-  "Community Engagement & Civic Life"           = c("Community Organizing & Advocacy","Civic Engagement",
-                                                    "Community Building","Infrastructure"),
-  "Equity, Justice & Inclusion"                 = c("Social Justice & Equity","Racial Justice",
-                                                    "LGBTQIA2S+ Safety and Rights","Women and Girls",
-                                                    "Refugee and Immigrant Support","Specific Cultural Focus",
-                                                    "Religious Affiliation","Criminal Legal System",
-                                                    "Military Veterans and Service Members"),
-  "Environment & Sustainability"                = c("Environment & Sustainability"),
-  "Arts, Culture & Creative Expression"         = c("Arts"),
-  "Other / Specialized Areas"                   = c("Not Otherwise Classified")
+  "Animal Welfare"                                  = "Animal Welfare",
+  "Arts & Culture"                                   = "Arts & Culture",
+  "Basic Needs & Material Assistance"                = "Basic Needs & Material Assistance",
+  "Community Development & Organizational Capacity"  = "Community Development & Organizational Capacity",
+  "Economic Stability & Workforce Development"       = "Economic Stability & Workforce Development",
+  "Education & Learning"                             = "Education & Learning",
+  "Environment & Sustainability"                     = "Environment & Sustainability",
+  "Food Access & Food Security"                      = "Food Access & Food Security",
+  "Health & Wellness"                                = "Health & Wellness",
+  "Housing & Homelessness"                           = "Housing & Homelessness",
+  "Human Services & Social Support"                  = "Human Services & Social Support",
+  "Justice, Legal Services & Public Safety"          = "Justice, Legal Services & Public Safety",
+  "Public Participation & Community Voice"           = "Public Participation & Community Voice",
+  "Social Justice & Equity"                          = "Social Justice & Equity",
+  "Youth Development"                                = "Youth Development"
 )
 
 cat_to_group <- setNames(
@@ -129,19 +106,16 @@ cat_to_group <- setNames(
 )
 
 # ── Skill area groups ──────────────────────────────────────────────────────
-# Raw values come from the matches data's Match_Category__r.Name field
-# (loaded below as projects$Category). Grouped into buckets the same way
-# Community Priority groups the raw account-level categories above.
-
 skill_group_map <- list(
-  "Communications, Marketing & Design"             = c("Art and Design", "Communication", "Marketing", "Social Media"),
-  "Data, Assessment & Evaluation"                  = c("Assessment/Evaluation", "Data Science"),
-  "Technology & Engineering"                       = c("Computer Science & Information Technology", "Engineering"),
-  "Organizational Development & Capacity Building" = c("Human Resources & Organizational Development", "Philanthropy/Development"),
-  "Program Development, Policy & Strategy"         = c("Program Development", "Policy", "UM Expertise"),
-  "Education & Community Learning"                 = c("Tutoring", "Guest Speaking"),
-  "Community Engagement & Leadership"               = c("Volunteer Recruitment Opportunity", "UM Board Participation"),
-  "Other / Specialized Skills"                     = c("Not Otherwise Classified")
+  "Communications, Marketing & Design"       = "Communications, Marketing & Design",
+  "Community Engagement & Facilitation"      = "Community Engagement & Facilitation",
+  "Data, Evaluation & Research"              = "Data, Evaluation & Research",
+  "Fundraising & Resource Development"       = "Fundraising & Resource Development",
+  "Organizational Management & Operations"   = "Organizational Management & Operations",
+  "Policy & Advocacy"                        = "Policy & Advocacy",
+  "Program Design & Delivery"                = "Program Design & Delivery",
+  "Teaching, Tutoring & Mentorship"          = "Teaching, Tutoring & Mentorship",
+  "Technology, Web & Engineering"            = "Technology, Web & Engineering"
 )
 
 skill_to_group <- setNames(
@@ -151,36 +125,93 @@ skill_to_group <- setNames(
 
 # ── Projects ──────────────────────────────────────────────────────────────────
 
-read_fy <- function(sheet) {
-  read_xlsx("Mapping CP Network.xlsx", sheet = sheet) |>
-    select(
-      Org       = `Initiative Account`,
-      Project   = `Initiative`,
-      Offering  = `Resource Offering`,
-      Completed = `Match Completed Date`,
-      Category  = `Match_Category__r.Name`
-    ) |>
-    mutate(
-      Completed = as.Date(as.numeric(Completed), origin = "1899-12-30"),
-      FY        = sheet
-    )
+# ── Org name lookup: resolve matches-file abbreviations to real account
+#    names, using the old tracking workbook's "Initiative Account" column
+#    as the source of truth wherever the same match still exists there. ──
+build_org_lookup <- function(xlsx_path = "Mapping CP Network.xlsx") {
+  read_one <- function(sheet) {
+    read_xlsx(xlsx_path, sheet = sheet) |>
+      select(`Match: Match Name`, `Initiative Account`)
+  }
+  bind_rows(read_one("FY25"), read_one("FY26")) |>
+    distinct(`Match: Match Name`, .keep_all = TRUE)
 }
 
-projects <- bind_rows(read_fy("FY25"), read_fy("FY26"))
+# A few matches in the new file aren't in the old workbook at all, so there's no Initiative Account to borrow.
+org_overrides <- c(
+  "HRWC" = "Huron River Watershed Council",
+  "RGI"  = "Refugee Garden Initiatives"
+)
 
+# Derives a fiscal year label (e.g. "FY25") from a completed-match date -
+# fiscal year runs July-June, so a date in Sept 2024 is FY25.
+fy_label <- function(d) {
+  yr     <- as.integer(format(d, "%Y"))
+  mo     <- as.integer(format(d, "%m"))
+  fy_end <- ifelse(mo >= 7, yr + 1, yr)
+  ifelse(is.na(d), NA_character_, paste0("FY", sprintf("%02d", fy_end %% 100)))
+}
+
+load_matches <- function(path = "Matches_Final.csv",
+                         xlsx_path = "Mapping CP Network.xlsx") {
+  raw <- read.csv(path, check.names = FALSE)
+  
+  blank <- is.na(names(raw)) | names(raw) == ""
+  if (any(blank)) names(raw)[blank] <- paste0("blank_col_", seq_len(sum(blank)))
+  
+  org_lookup <- build_org_lookup(xlsx_path)
+  
+  raw <- raw |>
+    left_join(org_lookup, by = "Match: Match Name") |>
+    mutate(
+      abbrev    = trimws(sub(":.*$", "", `Initiative: Initiative Name`)),
+      Org       = coalesce(`Initiative Account`, unname(org_overrides[abbrev]), abbrev),
+      Project   = `Initiative: Initiative Name`,
+      Completed = as.Date(`Match Completed Date`, format = "%m/%d/%Y"),
+      FY        = fy_label(Completed)
+    )
+  
+  skill_rows <- raw |>
+    tidyr::pivot_longer(
+      cols      = c(`Skill Area 1`, `Skill Area 2`, `Skill Area 3`),
+      values_to = "Category"
+    ) |>
+    filter(!is.na(Category), Category != "") |>
+    transmute(Org, Project, Resource.Offering = `Resource Offering`,
+              UM.Connection = `UM Connection`,
+              Offering = NA_character_, Completed, FY, Category)
+  
+  engagement_rows <- raw |>
+    tidyr::pivot_longer(
+      cols      = c(`Form of Engagement 1`, `Form of Engagement 2`,
+                    `Form of Engagement 3`, `Form of Engagement 4`),
+      values_to = "Offering"
+    ) |>
+    filter(!is.na(Offering), Offering != "") |>
+    transmute(Org, Project, Resource.Offering = `Resource Offering`,
+              UM.Connection = `UM Connection`,
+              Offering, Completed, FY, Category = NA_character_)
+  
+  bind_rows(skill_rows, engagement_rows)
+}
+
+projects <- load_matches()
 # ── Aggregated matches: one row per actual match ────────────────────────────
-# The source spreadsheet has one row per (Org, Project, FY, skill-area tag),
-# so a single project tagged with 3 skill areas shows up as 3 separate rows.
-# `projects` above stays in that raw long format (useful for tallying tag
-# frequency). `projects_agg` collapses it back down to one row per real
-# match/project, combining the skill areas (and forms of engagement) that
-# applied to it into single semicolon-separated fields - this is what
-# de-duplicated match counts and the org detail panel's match cards use.
+
 projects_agg <- projects |>
   mutate(skill_group = skill_to_group[Category]) |>
   group_by(Org, Project, FY) |>
   summarise(
     Completed = if (all(is.na(Completed))) as.Date(NA) else min(Completed, na.rm = TRUE),
+    # Resource Offering and UM Connection are both properties of the match.
+    Resource.Offering = {
+      vals <- unique(Resource.Offering[!is.na(Resource.Offering) & Resource.Offering != ""])
+      if (length(vals) == 0) NA_character_ else vals[1]
+    },
+    UM.Connection = {
+      vals <- unique(UM.Connection[!is.na(UM.Connection) & UM.Connection != ""])
+      if (length(vals) == 0) NA_character_ else vals[1]
+    },
     Skill.Areas = {
       vals <- unique(na.omit(skill_group))
       if (length(vals) == 0) NA_character_ else paste(sort(vals), collapse = "; ")
@@ -213,33 +244,34 @@ problem_orgs <- orgs |>
 
 # ── Filter choices ──────────────────────────────────────────────────────────
 
-# "Last 2 fiscal years" - computed from whatever FY values exist in the
-# matches data, so this stays correct as new FY sheets get added later
-# (e.g. once FY27 shows up, this becomes FY26/FY27 automatically).
+# "Last 2 fiscal years" - computed from whatever FY values exist in the matches data, so this stays correct as new FY sheets get added later.
 recent_fys <- tail(sort(unique(projects$FY)), 2)
 
-# Form of Engagement / Skill Area come from the matches data (Resource
-# Offering -> Offering, Match_Category__r.Name -> Category), not the
-# accounts CSV, since they're properties of a match rather than the org.
+# Form of Engagement / Skill Area come from the matches data.
 engagement_choices <- sort(unique(projects$Offering[!is.na(projects$Offering) & projects$Offering != ""]))
 skill_choices       <- names(skill_group_map)
 
-# School / College / Unit isn't in the data yet (expected later). Choices
-# stay empty until the real column has real values; once it does, this
-# filter activates on its own with no code changes.
-scu_choices <- sort(unique(orgs$School.College.Unit[!is.na(orgs$School.College.Unit) & orgs$School.College.Unit != ""]))
+# School / College / Unit is match-level, not org-level. It is UM.Connection
+scu_choices <- sort(unique(projects$UM.Connection[!is.na(projects$UM.Connection) & projects$UM.Connection != ""]))
 
 # ── Color palette ─────────────────────────────────────────────────────────────
 
 group_colors <- c(
-  "Education & Youth Development"               = "#4e79a7",
-  "Health & Wellbeing"                          = "#59a14f",
-  "Housing, Economic Opportunity & Basic Needs" = "#f28e2b",
-  "Community Engagement & Civic Life"           = "#76b7b2",
-  "Equity, Justice & Inclusion"                 = "#b07aa1",
-  "Environment & Sustainability"                = "#499894",
-  "Arts, Culture & Creative Expression"         = "#e15759",
-  "Other / Specialized Areas"                   = "#9c755f"
+  "Animal Welfare"                                  = "#bab0ac",
+  "Arts & Culture"                                   = "#e15759",
+  "Basic Needs & Material Assistance"                = "#9c755f",
+  "Community Development & Organizational Capacity"  = "#76b7b2",
+  "Economic Stability & Workforce Development"       = "#f28e2b",
+  "Education & Learning"                             = "#4e79a7",
+  "Environment & Sustainability"                     = "#499894",
+  "Food Access & Food Security"                      = "#edc948",
+  "Health & Wellness"                                = "#59a14f",
+  "Housing & Homelessness"                           = "#d37295",
+  "Human Services & Social Support"                  = "#8cd17d",
+  "Justice, Legal Services & Public Safety"          = "#b07aa1",
+  "Public Participation & Community Voice"           = "#86bcb6",
+  "Social Justice & Equity"                          = "#ff9d9a",
+  "Youth Development"                                = "#79706e"
 )
 
 group_pal <- colorFactor(
@@ -252,21 +284,13 @@ group_pal <- colorFactor(
 marker_color <- "#00274C"
 
 # ── Infographics data ───────────────────────────────────────────────────────
-# Everything here is computed once from data we already have (no "coming
-# soon" placeholders needed) - the accounts table + the FY25/FY26 matches
-# data loaded above.
 
 # -- Geographic classification -----------------------------------------
 # No explicit country column in the source data, so this is inferred:
-#   - "Unknown"            : accounts with no usable address at all (see
-#                            no_geo_names above)
+#   - "Unknown"            : accounts with no usable address at all
 #   - "Southeast Michigan" : Billing State = MI AND falls inside a rough
 #                            SE Michigan bounding box (Wayne/Oakland/Macomb/
 #                            Washtenaw/Livingston/Monroe/St. Clair area).
-#                            This is a bounding-box approximation, not real
-#                            county boundaries - good enough for an at-a-
-#                            glance stat, but worth swapping for a real
-#                            county lookup if precision matters later.
 #   - "Rest of Michigan"   : Billing State = MI, outside that box
 #   - "USA (Other States)" : Billing State is a US state/territory, not MI
 #   - "International"      : anything else (foreign address, or a Billing
@@ -306,10 +330,6 @@ n_usa_other    <- sum(orgs$Geo.Bucket == "USA (Other States)")
 n_international <- sum(orgs$Geo.Bucket == "International")
 
 # -- Top community priority areas (by number of distinct orgs involved) --
-# An org can carry multiple categories; each org is counted once per
-# priority group it touches (not once per raw category), so an org tagged
-# with both "Literacy" and "Mentoring" only counts once toward "Education &
-# Youth Development".
 org_priority_groups <- apply(orgs[, cat_cols], 1, function(x) {
   vals   <- x[!is.na(x) & x != ""]
   groups <- unique(cat_to_group[vals])
@@ -319,9 +339,6 @@ priority_counts <- sort(table(unlist(org_priority_groups)), decreasing = TRUE)
 top3_priorities <- head(priority_counts, 3)
 
 # -- Matches leaderboard (all-time, from the FY25+FY26 matches data) -----
-# Uses projects_agg (one row per real match) rather than the raw long-format
-# `projects`, so a project tagged with 3 skill areas counts as 1 match here,
-# not 3.
 matches_leaderboard <- projects_agg |>
   count(Org, name = "Matches") |>
   arrange(desc(Matches)) |>
@@ -336,10 +353,7 @@ recent_by_fy <- recent_matches_agg |> count(FY, name = "n")
 recent_matches_grouped <- recent_matches_agg |>
   left_join(orgs |> select(Account.Name, primary_group), by = c("Org" = "Account.Name"))
 
-# Each match counts once per priority/skill/engagement value it actually
-# has - a project with 2 skill areas contributes to 2 buckets below, but a
-# project with 1 skill area doesn't get double-counted just because its
-# source rows once did.
+
 top_priorities_recent <- recent_matches_grouped |>
   filter(!is.na(primary_group)) |> count(primary_group, name = "n") |> arrange(desc(n))
 
@@ -353,8 +367,6 @@ top_engagement_recent <- recent_matches_grouped |>
   tidyr::separate_rows(Forms.of.Engagement, sep = "; ") |>
   count(Forms.of.Engagement, name = "n") |> arrange(desc(n))
 
-# A distinct accent color per geographic bucket, reusing the style guide's
-# secondary palette so this ties visually to the rest of the U-M brand.
 geo_colors <- c(
   "Southeast Michigan"  = "#00274C",  # Blue
   "Rest of Michigan"    = "#407EC9",  # Arboretum Blue
@@ -372,10 +384,7 @@ top3_priorities_df <- data.frame(
   stringsAsFactors = FALSE
 )
 
-# General-purpose qualitative palette (brand + style-guide secondary colors)
-# for charts with categories that don't already have a fixed named palette
-# (Form of Engagement values are whatever's in the spreadsheet, so they
-# can't be pre-assigned specific colors the way Community Priority can).
+
 brand_qualitative <- c("#00274C", "#FFCB05", "#9A3324", "#00B2A9", "#D86018",
                        "#702082", "#407EC9", "#59a14f", "#e15759", "#9c755f")
 
@@ -384,9 +393,7 @@ bar_colors_for <- function(n) {
 }
 
 # ── Chart helpers ────────────────────────────────────────────────────────
-# `colors` can be a single hex string (uniform bars) or a named vector keyed
-# by the values in cat_col (e.g. group_colors) for a fixed per-category
-# palette that stays consistent with the map/legend elsewhere in the app.
+
 make_horiz_bar <- function(df, cat_col, val_col, colors = "#00274C", unit_label = "match") {
   df <- df[order(df[[val_col]]), , drop = FALSE]  # ascending so the biggest bar plots on top
   cats <- df[[cat_col]]
@@ -434,10 +441,6 @@ make_donut <- function(df, label_col, val_col, colors) {
     config(displayModeBar = FALSE)
 }
 
-# Renders the small chip row showing which values are currently selected in
-# a multi-select filter. `colors` (optional, named vector) gives per-value
-# background colors (used for Community Priority, to match its brand
-# colors elsewhere); otherwise all chips use the same neutral style.
 selected_tags_ui <- function(values, colors = NULL) {
   if (is.null(values) || length(values) == 0) return(NULL)
   tags$div(
@@ -461,14 +464,13 @@ stat_tile <- function(number, label, color = "#00274C") {
   )
 }
 
-# Simple two-column Field / Description table for the Data Dictionary tab.
-# `rows` is a list of c(field, description) pairs.
+
 field_table <- function(rows) {
-  th_style <- "text-align:left;padding:6px 10px;border-bottom:2px solid #e8edf2;color:#00274C;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.05em;"
+  th_style <- "text-align:left;padding:6px 10px;border-bottom:2px solid #e8edf2;color:#00274C;font-size: 15px;text-transform:uppercase;letter-spacing:0.05em;"
   td1_style <- "padding:7px 10px;border-bottom:1px solid #f0f2f5;font-weight:600;color:#333;white-space:nowrap;vertical-align:top;"
   td2_style <- "padding:7px 10px;border-bottom:1px solid #f0f2f5;color:#555;line-height:1.5;"
   tags$table(
-    style = "width:100%; border-collapse:collapse; font-size:0.82rem;",
+    style = "width:100%; border-collapse:collapse; font-size: 15px;",
     tags$thead(
       tags$tr(tags$th(style = th_style, "Field"), tags$th(style = th_style, "Description"))
     ),
@@ -489,24 +491,24 @@ make_label <- function(data) {
     grp_col <- if (!is.na(grp)) group_pal(grp) else "#888888"
     
     status_line <- if (!is.na(o$Ginsberg.Partner.Status) && o$Ginsberg.Partner.Status != "")
-      paste0("<div style='font-size:0.75rem;color:#666;margin-top:2px;'>",
+      paste0("<div style='font-size: 15px;color:#666;margin-top:2px;'>",
              o$Ginsberg.Partner.Status, " Partner</div>")
     else ""
     
     group_line <- if (!is.na(grp))
       paste0("<div style='margin-top:5px;'><span style='background:", grp_col,
-             ";color:#fff;padding:2px 9px;border-radius:20px;font-size:0.69rem;font-weight:600;'>",
+             ";color:#fff;padding:2px 9px;border-radius:20px;font-size: 15px;font-weight:600;'>",
              grp, "</span></div>")
     else ""
     
     city_line <- if (!is.na(o$Billing.City) && o$Billing.City != "")
-      paste0("<div style='font-size:0.73rem;color:#888;margin-top:4px;'>",
+      paste0("<div style='font-size: 15px;color:#888;margin-top:4px;'>",
              o$Billing.City, ", ", o$Billing.State.Province, "</div>")
     else ""
     
     HTML(paste0(
       "<div style='font-family:system-ui,-apple-system,sans-serif;padding:5px 7px;min-width:170px;'>",
-      "<strong style='font-size:0.88rem;color:#1a1a1a;'>", htmlEscape(o$Account.Name), "</strong>",
+      "<strong style='font-size: 15px;color:#1a1a1a;'>", htmlEscape(o$Account.Name), "</strong>",
       status_line, group_line, city_line,
       "</div>"
     ))
@@ -521,18 +523,18 @@ make_popup <- function(o) {
     bg  <- if (o$Ginsberg.Partner.Status == "Active") "#198754" else "#e6a817"
     txt <- if (o$Ginsberg.Partner.Status == "Active") "#fff" else "#1a1a1a"
     paste0("<span style='background:", bg, ";color:", txt,
-           ";padding:3px 10px;border-radius:20px;font-size:0.71rem;font-weight:700;margin-right:5px;'>",
+           ";padding:3px 10px;border-radius:20px;font-size: 15px;font-weight:700;margin-right:5px;'>",
            o$Ginsberg.Partner.Status, "</span>")
   } else ""
   
   group_badge <- if (!is.na(grp))
     paste0("<span style='background:", grp_col,
-           ";color:#fff;padding:3px 10px;border-radius:20px;font-size:0.71rem;font-weight:700;'>",
+           ";color:#fff;padding:3px 10px;border-radius:20px;font-size: 15px;font-weight:700;'>",
            grp, "</span>")
   else ""
   
   addr_line <- if (!is.na(o$Billing.Address.Line.1) && o$Billing.Address.Line.1 != "")
-    paste0("<div style='font-size:0.8rem;color:#555;margin-top:8px;line-height:1.45;'>",
+    paste0("<div style='font-size: 15px;color:#555;margin-top:8px;line-height:1.45;'>",
            htmlEscape(o$Billing.Address.Line.1), "<br>",
            htmlEscape(o$Billing.City), ", ", o$Billing.State.Province,
            " ", o$Billing.Zip.Postal.Code, "</div>")
@@ -540,12 +542,11 @@ make_popup <- function(o) {
   
   website_line <- if (!is.na(o$Website) && o$Website != "")
     paste0("<div style='margin-top:7px;'><a href='", o$Website,
-           "' target='_blank' rel='noopener' style='font-size:0.79rem;color:#4e79a7;text-decoration:none;'>",
+           "' target='_blank' rel='noopener' style='font-size: 15px;color:#4e79a7;text-decoration:none;'>",
            "\U0001F517 ", htmlEscape(o$Website), "</a></div>")
   else ""
   
   # ── Stats: total matches + partnership length ────────────────────────
-  # Placeholder styling until "Total Matches" and "Created Date" arrive.
   matches_text <- if (!is.na(o$Total.Matches))
     paste0("<strong style='color:#1a1a1a;'>", o$Total.Matches, "</strong> match",
            if (o$Total.Matches != 1) "es" else "")
@@ -558,18 +559,18 @@ make_popup <- function(o) {
     "<span style='color:#bbb;font-style:italic;'>Partnership length coming soon</span>"
   
   stats_line <- paste0(
-    "<div style='font-size:0.78rem;color:#555;margin-top:8px;line-height:1.6;'>",
+    "<div style='font-size: 15px;color:#555;margin-top:8px;line-height:1.6;'>",
     matches_text, " &nbsp;\u2022&nbsp; ", since_text,
     "</div>"
   )
   
   HTML(paste0(
     "<div style='font-family:system-ui,-apple-system,sans-serif;min-width:250px;max-width:320px;padding:6px 2px;'>",
-    "<div style='font-size:1rem;font-weight:700;color:#00274C;line-height:1.25;margin-bottom:9px;'>",
+    "<div style='font-size: 15px;font-weight:700;color:#00274C;line-height:1.25;margin-bottom:9px;'>",
     htmlEscape(o$Account.Name), "</div>",
     "<div style='margin-bottom:4px;'>", status_badge, group_badge, "</div>",
     addr_line, website_line, stats_line,
-    "<div style='font-size:0.69rem;color:#bbb;margin-top:10px;border-top:1px solid #f0f0f0;padding-top:7px;'>",
+    "<div style='font-size: 15px;color:#bbb;margin-top:10px;border-top:1px solid #f0f0f0;padding-top:7px;'>",
     "See sidebar for full details &amp; matches &rarr;</div>",
     "</div>"
   ))
@@ -590,7 +591,7 @@ app_theme <- bs_theme(
   "navbar-dark-hover-color" = "#FFCB05",
   "navbar-dark-active-color"= "#FFCB05",
   "navbar-dark-brand-color" = "#ffffff",
-  "font-size-base"          = "0.9rem",
+  "font-size-base"          = "1rem",
   "border-radius"           = "0.5rem",
   "border-radius-sm"        = "0.3rem",
   "card-border-width"       = "0",
@@ -603,10 +604,12 @@ app_theme <- bs_theme(
 
 ui <- page_navbar(
   title    = tags$span(
+    class = "brand-wrap",
     style = "display:flex; align-items:end; gap:16px;",
-    tags$img(src = "Edward-Ginsberg-Center_web-logo.png", height = "50", style = "display:block;"),
+    tags$img(id = "brand-logo", src = "Edward-Ginsberg-Center_web-logo.png", height = "50", style = "display:block; margin-left: 70px;"),
     tags$span(
-      style = "font-weight:700; letter-spacing:-0.2px; color:rgba(255,255,255,0.85); font-size:1.05rem;",
+      class = "brand-text",
+      style = "font-weight:700; letter-spacing:-0.2px; color:rgba(255,255,255,0.85); font-size: 16px;",
       "Community Partners"
     )
   ),
@@ -626,12 +629,15 @@ ui <- page_navbar(
       }
 
       /* ── Global text size ─────────────────────────────────────────────
-         Almost every font-size in this app is set in rem, which is always
-         relative to this root <html> size. Bumping it here scales all of
-         them (sidebar labels, badges, popups, match cards, tables, etc.)
-         proportionally in one place, instead of hunting down every
-         hardcoded rem value individually. */
-      html { font-size: 17px; }
+         Every font-size in this app (sidebar labels, badges, popups,
+         match cards, tables, etc.) is now set as an explicit px value of
+         at least 16px/12pt, rather than rem relative to this root - that
+         was flipped deliberately so text can't quietly shrink below a
+         readable size if this root or a parent element's size changes.
+         This root size itself still only affects truly unstyled text
+         (default Bootstrap elements with no font-size override, which
+         is covered by font-size-base in the theme above instead). */
+      html { font-size: 15px; }
 
       /* ── Navbar: tall navy logo band + maize nav-link band underneath ──
          (mirrors the Ginsberg Center site's own header structure) */
@@ -659,10 +665,10 @@ ui <- page_navbar(
       }
       .navbar-nav {
         width: 100%;
-        padding: 0 24px;
+        padding: 0 55px;
       }
       .navbar-nav .nav-link {
-        font-weight: 700; font-size: 0.87rem; padding: 0.85rem 1.1rem;
+        font-weight: 700; font-size: 15px; padding: 0.85rem 1.1rem;
         color: #1a1a1a !important;
       }
       .navbar-nav .nav-link:hover { color: #00274C !important; background: rgba(0,0,0,0.05); }
@@ -681,14 +687,14 @@ ui <- page_navbar(
       /* ── Sidebar ────────────────────────────────────────────────────── */
       .bslib-sidebar-layout > .sidebar { background: #ffffff !important; border-right: 1px solid #e4e8ee; }
       .sidebar-section-label {
-        font-size: 0.67rem; font-weight: 700; text-transform: uppercase;
+        font-size: 15px; font-weight: 700; text-transform: uppercase;
         letter-spacing: 0.09em; color: #00274C; margin: 0 0 6px 0;
       }
 
       /* ── Community Priority / Engagement / Skill / SCU listboxes ──────── */
       #priority_filter, #engagement_filter, #skill_filter, #scu_filter {
         border-radius: 8px !important; border: 1px solid #dde2e8 !important;
-        font-size: 0.82rem; overflow-y: auto;
+        font-size: 15px; overflow-y: auto;
       }
       #priority_filter option, #engagement_filter option,
       #skill_filter option, #scu_filter option { padding: 7px 10px; line-height: 1.5; }
@@ -709,7 +715,7 @@ ui <- page_navbar(
       .leaflet-popup-tip-container { display: none !important; }
       .leaflet-popup-close-button {
         top: 8px !important; right: 10px !important;
-        font-size: 1.1rem !important; color: #999 !important;
+        font-size: 17px !important; color: #999 !important;
       }
 
       /* ── Map legend ─────────────────────────────────────────────────── */
@@ -717,7 +723,7 @@ ui <- page_navbar(
         background: rgba(255,255,255,0.95) !important;
         border-radius: 10px !important;
         box-shadow: 0 2px 12px rgba(0,0,0,0.12) !important;
-        font-size: 0.75rem !important;
+        font-size: 15px !important;
         padding: 10px 14px !important;
         line-height: 1.6 !important;
       }
@@ -731,10 +737,10 @@ ui <- page_navbar(
         margin-bottom: 12px;
       }
       .about-title {
-        font-weight: 700; font-size: 0.82rem; color: #00274C; margin-bottom: 9px;
+        font-weight: 700; font-size: 15px; color: #00274C; margin-bottom: 9px;
       }
       .about-box p {
-        font-size: 0.79rem; color: #444; line-height: 1.55; margin-bottom: 7px;
+        font-size: 15px; color: #444; line-height: 1.55; margin-bottom: 7px;
       }
       .about-box p:last-child { margin-bottom: 0; }
 
@@ -742,16 +748,16 @@ ui <- page_navbar(
       .instruction-box {
         background: #e8f0fe; border-radius: 8px;
         padding: 10px 13px; margin-top: 4px;
-        font-size: 0.79rem; color: #1a3a6b; line-height: 1.45;
+        font-size: 15px; color: #1a3a6b; line-height: 1.45;
       }
 
       /* ── Org panel ──────────────────────────────────────────────────── */
       .org-name {
-        font-size: 1rem; font-weight: 700; color: #00274C;
+        font-size: 15px; font-weight: 700; color: #00274C;
         line-height: 1.3; margin-bottom: 3px;
       }
       .org-website {
-        font-size: 0.77rem; color: #4e79a7 !important;
+        font-size: 15px; color: #4e79a7 !important;
         text-decoration: none !important; display: block; margin-bottom: 5px;
       }
       .org-website:hover { text-decoration: underline !important; }
@@ -787,7 +793,7 @@ ui <- page_navbar(
         margin-top: 8px; margin-bottom: 4px;
       }
       .selected-tag {
-        display: inline-block; font-size: 0.71rem; font-weight: 600;
+        display: inline-block; font-size: 15px; font-weight: 600;
         padding: 3px 10px; border-radius: 20px;
         background: #eef1f5; color: #00274C;
         white-space: nowrap;
@@ -795,10 +801,10 @@ ui <- page_navbar(
 
       /* ── Live result count pill (top of Filters section) ─────────────── */
       .result-count-pill {
-        font-size: 0.82rem; color: #444; background: #f0f4f8;
+        font-size: 15px; color: #444; background: #f0f4f8;
         border-radius: 8px; padding: 8px 12px; margin-bottom: 14px;
       }
-      .result-count-pill strong { color: #00274C; font-size: 0.95rem; }
+      .result-count-pill strong { color: #00274C; font-size: 15px; }
       .result-count-pill.result-count-zero {
         background: #fdf3e7; color: #9a5b00; font-weight: 600;
       }
@@ -835,7 +841,7 @@ ui <- page_navbar(
         border: 1px solid #e4e8ee;
         border-radius: 20px;
         padding: 7px 14px;
-        font-size: 0.78rem;
+        font-size: 15px;
         color: #555;
         box-shadow: 0 2px 10px rgba(0,0,0,0.12);
         pointer-events: none;
@@ -846,7 +852,7 @@ ui <- page_navbar(
         display: inline-flex;
         align-items: center;
         gap: 5px;
-        font-size: 0.79rem;
+        font-size: 15px;
         font-weight: 600;
         color: #666 !important;
         text-decoration: none !important;
@@ -863,7 +869,7 @@ ui <- page_navbar(
       /* ── Nav tabs in sidebar ────────────────────────────────────────── */
       .nav-tabs { border-bottom: 2px solid #e8edf2 !important; }
       .nav-tabs .nav-link {
-        font-size: 0.81rem; font-weight: 500; color: #666;
+        font-size: 15px; font-weight: 500; color: #666;
         border: none !important; padding: 6px 12px;
       }
       .nav-tabs .nav-link.active {
@@ -875,7 +881,7 @@ ui <- page_navbar(
 
       /* ── Infographics ──────────────────────────────────────────────── */
       .infographic-section-title {
-        font-size: 0.95rem; font-weight: 700; color: #00274C;
+        font-size: 15px; font-weight: 700; color: #00274C;
         margin-bottom: 14px; padding-bottom: 8px;
         border-bottom: 2px solid #FFCB05;
       }
@@ -890,13 +896,13 @@ ui <- page_navbar(
         text-align: center;
         border: 1px solid #eef1f5;
       }
-      .stat-number { font-size: 1.7rem; font-weight: 800; line-height: 1.1; }
+      .stat-number { font-size: 26px; font-weight: 800; line-height: 1.1; }
       .stat-label {
-        font-size: 0.68rem; font-weight: 600; color: #888;
+        font-size: 15px; font-weight: 600; color: #888;
         text-transform: uppercase; letter-spacing: 0.06em; margin-top: 5px;
       }
       .chart-card-title {
-        font-size: 0.76rem; font-weight: 700; color: #00274C;
+        font-size: 15px; font-weight: 700; color: #00274C;
         text-transform: uppercase; letter-spacing: 0.06em;
         margin-bottom: 8px;
       }
@@ -905,18 +911,76 @@ ui <- page_navbar(
         padding: 14px 16px; height: 100%;
       }
 
+      /* ── DT tables: let them scroll horizontally instead of overflowing
+             the viewport width on narrow screens ─────────────────────────── */
+      .dataTables_wrapper { overflow-x: auto; width: 100%; }
+
+      /* ── Mobile layout ─────────────────────────────────────────────────
+             Everything above assumes a desktop-width window (the logo
+             margin, navbar padding, and drawer width in particular are all
+             fixed px values). This breakpoint pulls those back in so the
+             page doesn't scroll sideways on a phone; bslib's own sidebar
+             (collapsible drawer) and plotly charts are already responsive
+             on their own and don't need help here. ────────────────────── */
+      @media (max-width: 768px) {
+        html { font-size: 15px; }
+
+        .navbar-brand {
+          padding: 14px 16px !important;
+        }
+        .brand-wrap { gap: 10px !important; }
+        #brand-logo {
+          height: 34px !important;
+          margin-left: 0 !important;
+        }
+        .brand-text { font-size: 15px !important; }
+
+        .navbar-nav { padding: 0 10px !important; }
+        .navbar-nav .nav-link {
+          padding: 0.7rem 0.85rem !important;
+          font-size: 15px !important;
+        }
+        .navbar-toggler { margin: 10px 14px !important; }
+
+        /* Org detail drawer: take the full screen instead of a fixed
+           400px panel, which would otherwise leave barely any of the
+           map visible next to it. */
+        .org-detail-drawer {
+          width: 100% !important;
+          max-width: 100% !important;
+        }
+
+        .about-box, .instruction-box { padding: 11px 13px; }
+
+        .stat-tile-row { gap: 8px; }
+        .stat-tile { flex: 1 1 45%; }
+
+        /* Give listboxes (Community Priority, Skill Area, etc.) a bit
+           less height so the sidebar doesn't turn into one long scroll
+           before you even reach the map/table on a small screen. */
+        #priority_filter { height: 140px !important; }
+        #skill_filter, #engagement_filter, #scu_filter { height: 110px !important; }
+      }
+
     ")),
     tags$script(HTML("
       $(document).ready(function() {
         var groupColors = {
-          'Education & Youth Development':               '#4e79a7',
-          'Health & Wellbeing':                          '#59a14f',
-          'Housing, Economic Opportunity & Basic Needs': '#f28e2b',
-          'Community Engagement & Civic Life':           '#76b7b2',
-          'Equity, Justice & Inclusion':                 '#b07aa1',
-          'Environment & Sustainability':                '#499894',
-          'Arts, Culture & Creative Expression':         '#e15759',
-          'Other / Specialized Areas':                   '#9c755f'
+          'Animal Welfare':                                 '#bab0ac',
+          'Arts & Culture':                                  '#e15759',
+          'Basic Needs & Material Assistance':               '#9c755f',
+          'Community Development & Organizational Capacity': '#76b7b2',
+          'Economic Stability & Workforce Development':      '#f28e2b',
+          'Education & Learning':                            '#4e79a7',
+          'Environment & Sustainability':                    '#499894',
+          'Food Access & Food Security':                     '#edc948',
+          'Health & Wellness':                               '#59a14f',
+          'Housing & Homelessness':                          '#d37295',
+          'Human Services & Social Support':                 '#8cd17d',
+          'Justice, Legal Services & Public Safety':         '#b07aa1',
+          'Public Participation & Community Voice':          '#86bcb6',
+          'Social Justice & Equity':                         '#ff9d9a',
+          'Youth Development':                               '#79706e'
         };
         $('#priority_filter option').each(function() {
           var col = groupColors[$(this).val()];
@@ -945,8 +1009,8 @@ ui <- page_navbar(
       fillable = TRUE,
       sidebar = sidebar(
         bg      = "white",
-        width   = 390,
-        open    = "open",
+        width   = 400,
+        open    = list(desktop = "open", mobile = "closed"),
         padding = "16px",
         div(class = "about-box",
             div(class = "about-title", "About the Map"),
@@ -982,17 +1046,17 @@ ui <- page_navbar(
           "recent_match_filter",
           label = paste0("Only show orgs with a match in the last 2 fiscal years (",
                          paste(recent_fys, collapse = " or "), ")"),
-          value = FALSE
+          value = TRUE
         ),
         tags$hr(style = "margin: 14px 0; border-color: #e8edf2;"),
         tags$div(
           style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;",
           tags$p(class = "sidebar-section-label", style = "margin:0;", "Community Priority"),
-          actionLink("clear_filter", "Clear all",
-                     style = "font-size:0.73rem; color:#aaa; text-decoration:none;")
+          actionLink("clear_filter", "Clear",
+                     style = "font-size: 15px; color:#aaa; text-decoration:none;")
         ),
         tags$p(
-          style = "font-size:0.72rem; color:#bbb; margin-bottom:8px; line-height:1.4;",
+          style = "font-size: 15px; color:#bbb; margin-bottom:8px; line-height:1.4;",
           "Hold Ctrl (Windows) or \u2318 Cmd (Mac) to select multiple."
         ),
         selectInput(
@@ -1006,13 +1070,13 @@ ui <- page_navbar(
           style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;",
           tags$p(class = "sidebar-section-label", style = "margin:0;", "Skill Area"),
           if (length(skill_choices) > 0)
-            actionLink("clear_skill_filter", "Clear all",
-                       style = "font-size:0.73rem; color:#aaa; text-decoration:none;")
+            actionLink("clear_skill_filter", "Clear",
+                       style = "font-size: 15px; color:#aaa; text-decoration:none;")
         ),
         if (length(skill_choices) > 0) {
           tagList(
             tags$p(
-              style = "font-size:0.72rem; color:#bbb; margin-bottom:8px; line-height:1.4;",
+              style = "font-size: 15px; color:#bbb; margin-bottom:8px; line-height:1.4;",
               "Hold Ctrl (Windows) or \u2318 Cmd (Mac) to select multiple."
             ),
             selectInput(
@@ -1023,19 +1087,19 @@ ui <- page_navbar(
             uiOutput("skill_selected_tags")
           )
         } else
-          tags$p(style = "font-size:0.78rem;color:#bbb;font-style:italic;", "No match data available yet."),
+          tags$p(style = "font-size: 15px;color:#bbb;font-style:italic;", "No match data available yet."),
         tags$hr(style = "margin: 14px 0; border-color: #e8edf2;"),
         tags$div(
           style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;",
           tags$p(class = "sidebar-section-label", style = "margin:0;", "Form of Engagement"),
           if (length(engagement_choices) > 0)
-            actionLink("clear_engagement_filter", "Clear all",
-                       style = "font-size:0.73rem; color:#aaa; text-decoration:none;")
+            actionLink("clear_engagement_filter", "Clear",
+                       style = "font-size: 15px; color:#aaa; text-decoration:none;")
         ),
         if (length(engagement_choices) > 0) {
           tagList(
             tags$p(
-              style = "font-size:0.72rem; color:#bbb; margin-bottom:8px; line-height:1.4;",
+              style = "font-size: 15px; color:#bbb; margin-bottom:8px; line-height:1.4;",
               "Hold Ctrl (Windows) or \u2318 Cmd (Mac) to select multiple."
             ),
             selectInput(
@@ -1046,11 +1110,21 @@ ui <- page_navbar(
             uiOutput("engagement_selected_tags")
           )
         } else
-          tags$p(style = "font-size:0.78rem;color:#bbb;font-style:italic;", "No match data available yet."),
+          tags$p(style = "font-size: 15px;color:#bbb;font-style:italic;", "No match data available yet."),
         tags$hr(style = "margin: 14px 0; border-color: #e8edf2;"),
-        tags$p(class = "sidebar-section-label", "School / College / Unit"),
-        if (length(scu_choices) > 0)
+        tags$div(
+          style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;",
+          tags$p(class = "sidebar-section-label", style = "margin:0;", "School / College / Unit"),
+          if (length(scu_choices) > 0)
+            actionLink("clear_scu_filter", "Clear",
+                       style = "font-size: 15px; color:#aaa; text-decoration:none;")
+        ),
+        if (length(scu_choices) > 0) {
           tagList(
+            tags$p(
+              style = "font-size: 15px; color:#bbb; margin-bottom:8px; line-height:1.4;",
+              "Hold Ctrl (Windows) or \u2318 Cmd (Mac) to select multiple."
+            ),
             selectInput(
               "scu_filter", label = NULL,
               choices = scu_choices, selected = NULL,
@@ -1058,11 +1132,8 @@ ui <- page_navbar(
             ),
             uiOutput("scu_selected_tags")
           )
-        else
-          tags$p(
-            style = "font-size:0.78rem;color:#bbb;font-style:italic;",
-            "Coming soon \u2014 this filter will activate automatically once that data is added."
-          )
+        } else
+          tags$p(style = "font-size: 15px;color:#bbb;font-style:italic;", "No match data available yet.")
       ),
       div(
         style = "position:relative; height:100%; display:flex;",
@@ -1091,7 +1162,7 @@ ui <- page_navbar(
       sidebar = sidebar(
         bg      = "white",
         width   = 390,
-        open    = "open",
+        open    = list(desktop = "open", mobile = "closed"),
         padding = "16px",
         uiOutput("problem_org_panel")
       ),
@@ -1100,7 +1171,7 @@ ui <- page_navbar(
         card_header("Accounts with No Geographic Data"),
         card_body(
           tags$p(
-            style = "font-size:0.79rem; color:#888; margin-bottom:12px; line-height:1.45;",
+            style = "font-size: 15px; color:#888; margin-bottom:12px; line-height:1.45;",
             "These accounts don't have a usable address on file, so they can't be placed on the map yet. ",
             "Click a row to see their details and matched projects."
           ),
@@ -1122,72 +1193,77 @@ ui <- page_navbar(
             
             accordion_panel(
               "Accounts Data",
-              tags$p(style = "font-size:0.78rem;color:#888;margin-bottom:10px;",
+              tags$p(style = "font-size: 15px;color:#888;margin-bottom:10px;",
                      "From ", tags$code("Accounts_wideCategories_Geocoded.csv"), ", one row per community partner."),
               field_table(list(
                 c("Account Name", "The organization's official name."),
-                c("Description", "Free-text summary of the org's mission/programs, shown in the org detail panel."),
-                c("Billing Address Line 1 / 2, City, State/Province, Zip/Postal Code",
-                  "The org's primary mailing address on file."),
-                c("Ginsberg Partner Status", "Where the relationship currently stands: Active or Lead."),
-                c("Category 1\u20139", "Up to nine focus-area tags per org, from Salesforce's category picklist. Rolled up into the 8 Community Priority groups below for map coloring/filtering."),
-                c("Category: Type / Category: Subtype", "A separate, higher-level categorization field from Salesforce. Not currently used for grouping in this app \u2014 worth checking whether it should replace or supplement Category 1\u20139."),
+                c("Description", "Free-text summary of the org's programs and work, shown in the org detail panel."),
+                c("Mission Statement", "Free-text summary of the org's mission statement, shown in the org detail panel if a description is not available."),
+                c("Billing Address", "The org's primary mailing address on file."),
+                c("Ginsberg Partner Status", "Where an organization is currently Active or a Lead."),
+                c("Category 1\u20139", "Up to nine Community Priority tags per org, from the new accounts export's picklist. Already at the right granularity for map coloring/filtering, so each is used directly (see Community Priority Groups below) rather than rolled up further."),
                 c("Website", "Joined in from a separate file, websites.csv, by account name."),
-                c("latitude / longitude", "Geocoded coordinates. A few rows had missing/bad source addresses that geocoded to bogus points; those are either manually corrected or, if no address exists at all, excluded from the map and listed on the \u201cAccounts with No Geographic Data\u201d tab instead."),
+                c("Latitude / Longitude", "Geocoded coordinates. A few rows had missing/bad source addresses that geocoded to bogus points; those are either manually corrected or, if no address exists at all, excluded from the map and listed on the \u201cAccounts with No Geographic Data\u201d tab instead."),
                 c("Total Matches", "Coming soon. Whole-number count of matches per org, to be added from Salesforce."),
-                c("Created Date (\u201cPartner Since\u201d)", "Coming soon. Date the org was added to Salesforce; will be used to show partnership length."),
-                c("School / College / Unit", "Coming soon. Which U-M school, college, or unit the partnership sits under. Filter-only \u2014 won't be shown on the org card itself.")
+                c("Created Date (\u201cPartner Since\u201d)", "Date the org was added to Salesforce, shown as just the year in the \u201cPartner Since\u201d field.")
               ))
             ),
             
             accordion_panel(
               "Matches Data",
-              tags$p(style = "font-size:0.78rem;color:#888;margin-bottom:10px;",
-                     "From ", tags$code("Mapping CP Network.xlsx"), ", one row per match/project, across the FY25 and FY26 sheets."),
+              tags$p(style = "font-size: 15px;color:#888;margin-bottom:10px;",
+                     "From ", tags$code("Matches_Final.csv"), ", built by ", tags$code("data_processing.R"),
+                     " from the FY25-26 matches export. One row per (Org, Project, FY, tag) - a
+                     match with 2 Skill Areas and 1 Form of Engagement becomes 3 rows here."),
               field_table(list(
-                c("Initiative Account \u2192 Org", "Which community partner the match belongs to."),
-                c("Initiative \u2192 Project", "Name/title of the specific match or project."),
-                c("Resource Offering \u2192 Offering", "What kind of engagement the match was (e.g. a course-based project, a volunteer opportunity). Powers the \u201cForm of Engagement\u201d filter, currently shown as the raw values from the sheet."),
-                c("Match_Category__r.Name \u2192 Category", "The skill/expertise area the match called for. Grouped into the 8 Skill Area buckets below for the \u201cSkill Area\u201d filter."),
-                c("Match Completed Date \u2192 Completed", "When the match wrapped up."),
-                c("FY", "Which sheet the match came from \u2014 FY25 or FY26.")
+                c("Initiative: Initiative Name \u2192 Account Name \u2192 Org",
+                  "Which community partner the match belongs to. The export itself only has combined \u201cOrgAbbrev: Project Title\u201d text, not a clean org field, so Account Name is resolved by joining each match's ID against the old tracking workbook's \u201cInitiative Account\u201d column, with a small manual override table and district-level fallbacks (e.g. a school match with no school-specific account falls back to the district) for the few that still don't resolve."),
+                c("Initiative: Initiative Name \u2192 Project", "Name/title of the specific match or project (kept as-is, combined org+title text)."),
+                c("Skill Areas \u2192 Category", "The skill/expertise area(s) the match called for \u2014 already at the group level in this export (e.g. \u201cData, Evaluation & Research\u201d)"),
+                c("Form of Engagement \u2192 Offering", "What kind of engagement the match was (e.g. a course-based project, a volunteer opportunity). Powers the \u201cForm of Engagement\u201d filter."),
+                c("Resource Offering \u2192 Resource.Offering", "The specific course, program, or semester the match ran under (e.g. \u201cFY25 Fall Rackham Intern Fellows\u201d). Shown as-is on each match card for context."),
+                c("UM Connection \u2192 UM.Connection", "The U-M school, college, or unit involved in this match. Powers the \u201cSchool/College/Unit\u201d filter and is shown on each match card \u2014 this is match-level, not an org-level attribute, since the same org can have matches through different units."),
+                c("Match Completed Date \u2192 Completed", "When the match was marked complete."),
+                c("Fiscal Year", "Derived from Completed - fiscal year runs July\u2013June, so a date in Sept 2024 is FY25.")
               ))
             ),
             
             accordion_panel(
               "Community Priority Groups",
-              tags$p(style = "font-size:0.78rem;color:#888;margin-bottom:10px;",
-                     "The 8 buckets used for map coloring and the Community Priority filter, and which raw Category 1\u20139 values roll up into each."),
-              field_table(lapply(names(group_map), function(g) c(g, paste(group_map[[g]], collapse = "; "))))
+              tags$p(style = "font-size: 15px;color:#888;margin-bottom:10px;",
+                     "The 15 values used for map coloring and the Community Priority filter, taken directly from
+                     Category 1\u20139."),
+              tags$ul(style = "font-size: 15px;color:#555;padding-left:18px;margin:0;",
+                      lapply(names(group_map), tags$li))
             ),
             
             accordion_panel(
               "Skill Area Groups",
-              tags$p(style = "font-size:0.78rem;color:#888;margin-bottom:10px;",
-                     "The 8 buckets used for the Skill Area filter, and which raw match-category values roll up into each."),
-              field_table(lapply(names(skill_group_map), function(g) c(g, paste(skill_group_map[[g]], collapse = "; "))))
+              tags$p(style = "font-size: 15px;color:#888;margin-bottom:10px;",
+                     "The 9 values used for the Skill Area filter, taken directly from Skill Area 1\u20133."),
+              tags$ul(style = "font-size: 15px;color:#555;padding-left:18px;margin:0;",
+                      lapply(names(skill_group_map), tags$li))
             ),
             
             accordion_panel(
               "Filters on the Map Tab",
               field_table(list(
                 c("Partner Status", "Active / Lead / All."),
-                c("Recent match (last 2 FYs)", "Toggle \u2014 shows only orgs with at least one match in the two most recent fiscal years found in the matches data."),
-                c("Community Priority", "Org-level. An org qualifies if any of its Category 1\u20139 tags falls in a selected group."),
+                c("Recent match (last 2 FYs)", "Toggle \u2014 shows only orgs with at least one match in the two most recent fiscal years found in the matches data. Checked by default."),
+                c("Community Priority", "Org-level. An org qualifies if any of its Category 1\u20139 tags matches a selected value."),
                 c("Form of Engagement", "Match-level. An org qualifies if any of its matches has a selected engagement type."),
-                c("Skill Area", "Match-level, grouped. An org qualifies if any of its matches' category rolls up into a selected group."),
-                c("School / College / Unit", "Coming soon \u2014 will activate automatically once that data is added.")
+                c("Skill Area", "Match-level. An org qualifies if any of its matches has a selected skill area."),
+                c("School / College / Unit", "Match-level, from UM Connection. An org qualifies if any of its matches involved a selected U-M school/college/unit.")
               ))
             ),
             
             accordion_panel(
               "Known Data Quality Notes",
               tags$ul(
-                style = "font-size:0.82rem;color:#555;line-height:1.7;padding-left:20px;",
-                tags$li("25 accounts have no address on file at all and can't be geocoded. They're excluded from the map and listed on the \u201cAccounts with No Geographic Data\u201d tab."),
+                style = "font-size: 15px;color:#555;line-height:1.7;padding-left:20px;",
+                tags$li(paste0(length(no_geo_names), " accounts have no address on file at all and can't be geocoded. They're excluded from the map and listed on the \u201cAccounts with No Geographic Data\u201d tab.")),
                 tags$li("Two accounts (Detroit People's Platform; Next Chapter Bookclub of Saline) had bad source addresses that geocoded to another country. Both were manually corrected with verified addresses/coordinates."),
-                tags$li("A handful of accounts are legitimately located outside Michigan \u2014 real out-of-state or international partners, not an error."),
-                tags$li("The Infographics tab's Southeast Michigan / Rest of Michigan split is a rough latitude/longitude bounding-box approximation, not actual county boundaries \u2014 worth spot-checking.")
+                tags$li("The Infographics tab's Southeast Michigan / Rest of Michigan split is a rough latitude/longitude bounding-box approximation, not actual county boundaries.")
               )
             )
           )
@@ -1227,7 +1303,7 @@ ui <- page_navbar(
               class = "chart-panel",
               tags$div(class = "chart-card-title", "Top 3 Community Priority Areas"),
               tags$p(
-                style = "font-size:0.72rem;color:#999;margin-top:-4px;margin-bottom:10px;",
+                style = "font-size: 15px;color:#999;margin-top:-4px;margin-bottom:10px;",
                 "By number of partners working in that area"
               ),
               plotlyOutput("top3_priority_bar", height = "220px")
@@ -1262,7 +1338,7 @@ ui <- page_navbar(
           ),
           
           tags$p(
-            style = "font-size:0.78rem;color:#888;margin-bottom:10px;",
+            style = "font-size: 15px;color:#888;margin-bottom:10px;",
             "Most common skill areas, forms of engagement, and community priorities among matches in the last 2 fiscal years:"
           ),
           layout_columns(
@@ -1297,8 +1373,8 @@ ui <- page_navbar(
         card_body(
           tags$div(class = "infographic-section-title", "About This Map"),
           tags$p(
-            style = "font-size:0.88rem;color:#444;line-height:1.65;margin-bottom:14px;",
-            "This site visualizes the Edward Ginsberg Center's community partnerships \u2014 where our ",
+            style = "font-size: 15px;color:#444;line-height:1.65;margin-bottom:14px;",
+            "This site visualizes the Edward Ginsberg Center's community partnerships. It displays where our ",
             "partners are located, what they focus on, and the matches we've facilitated between them ",
             "and University of Michigan students, faculty, and staff."
           ),
@@ -1307,19 +1383,19 @@ ui <- page_navbar(
               tags$p("The Ginsberg Center began tracking community partner relationships in Salesforce in 2017.
                     The account data on this map comes from those Salesforce records, and the matches shown
                     come from the FY25 and FY26 match-tracking spreadsheet."),
-              tags$p("This map is not a complete history of the Center's work \u2014 relationships that predate
+              tags$p("This map is not a complete history of the Center's work, as relationships that predate
                     Salesforce, or that aren't fully reflected in how matches are recorded, may be under-
-                    represented here. Treat it as a current, evolving snapshot rather than a definitive record.")
+                    represented here. Treat this project as a current, evolving snapshot instead of a definitive record.")
           ),
           
           tags$div(class = "infographic-section-title", style = "margin-top:24px;", "Credits"),
           field_table(list(
-            c("Built by", "\u201cGinsberg Center Data & Evaluation Team\u201d"),
-            c("Data sources", "Salesforce account records; the FY25\u2013FY26 match-tracking spreadsheet (\u201cMapping CP Network.xlsx\u201d)"),
-            c("Categorization", "Community Priority and Skill Area groupings developed in partnership with Ginsberg Center staff (see Data Dictionary tab)"),
-            c("Design", "Built to the Ginsberg Center / University of Michigan brand style guide"),
-            c("Built with", "R, Shiny, leaflet, plotly, bslib, and DT"),
-            c("Questions or corrections", "[Placeholder \u2014 add a contact email or feedback link.]")
+            c("Built by:", "\u201cGinsberg Center Data & Evaluation Team\u201d"),
+            c("Data sources:", "Salesforce account records; the FY25\u2013FY26 match-tracking spreadsheet (\u201cMapping CP Network.xlsx\u201d)"),
+            c("Categorization:", "Community Priority and Skill Area groupings developed in partnership with Ginsberg Center staff (see Data Dictionary tab)"),
+            c("Design:", "Built to the Ginsberg Center / University of Michigan brand style guide"),
+            c("Built with:", "R, Shiny, leaflet, plotly, bslib, and DT"),
+            c("Questions or corrections?", "[Placeholder \u2014 add a contact email or feedback link.]")
           ))
         )
       )
@@ -1371,7 +1447,7 @@ server <- function(input, output, session) {
   
   output$map_result_count <- renderUI({
     n <- result_count()
-    if (n == 0) {
+    pill <- if (n == 0) {
       tags$div(
         class = "result-count-pill result-count-zero",
         "\u26A0\uFE0F No accounts match these filters"
@@ -1382,6 +1458,14 @@ server <- function(input, output, session) {
         tags$strong(format(n, big.mark = ",")), "results."
       )
     }
+    tagList(
+      pill,
+      tags$div(
+        style = "margin-top:-8px; margin-bottom:14px;",
+        actionLink("clear_all_filters", "Clear all filters",
+                   style = "font-size: 15px; color:#aaa; text-decoration:none;")
+      )
+    )
   })
   
   # ── Selected-value chips (so a selection doesn't visually disappear once
@@ -1427,7 +1511,8 @@ server <- function(input, output, session) {
     }
     
     if (!is.null(scu) && length(scu) > 0) {
-      base <- base |> filter(School.College.Unit %in% scu)
+      scu_orgs <- projects |> filter(UM.Connection %in% scu) |> pull(Org) |> unique()
+      base     <- base |> filter(Account.Name %in% scu_orgs)
     }
     
     leafletProxy("map") |>
@@ -1523,6 +1608,21 @@ server <- function(input, output, session) {
     updateSelectInput(session, "skill_filter", selected = character(0))
   })
   
+  # ── Clear school/college/unit filter ──────────────────────────────────────
+  observeEvent(input$clear_scu_filter, {
+    updateSelectInput(session, "scu_filter", selected = character(0))
+  })
+  
+  # ── Clear every filter on the Map tab, back to its default state ──────────
+  observeEvent(input$clear_all_filters, {
+    updateRadioButtons(session, "status_filter", selected = "All")
+    updateCheckboxInput(session, "recent_match_filter", value = TRUE)
+    updateSelectInput(session, "priority_filter", selected = character(0))
+    updateSelectInput(session, "skill_filter", selected = character(0))
+    updateSelectInput(session, "engagement_filter", selected = character(0))
+    updateSelectInput(session, "scu_filter", selected = character(0))
+  })
+  
   # ── Selected org state ────────────────────────────────────────────────────
   selected_org <- reactiveVal(NULL)
   
@@ -1591,7 +1691,7 @@ server <- function(input, output, session) {
     # not one per skill-area tag that match happened to carry.
     if (nrow(org_projects) == 0) {
       proj_html <- tags$p(
-        style = "color:#aaa; font-style:italic; font-size:0.82rem;",
+        style = "color:#aaa; font-style:italic; font-size: 15px;",
         "No matched projects on record."
       )
     } else {
@@ -1606,30 +1706,44 @@ server <- function(input, output, session) {
             style = "display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;",
             tags$span(
               style = paste0("background:", fy_bg, ";color:", fy_txt,
-                             ";padding:2px 9px;border-radius:20px;font-size:0.68rem;font-weight:700;"),
+                             ";padding:2px 9px;border-radius:20px;font-size: 15px;font-weight:700;"),
               p$FY
             ),
             if (!is.na(p$Completed))
               tags$span(
-                style = "font-size:0.69rem; color:#bbb; white-space:nowrap; margin-left:4px;",
-                format(p$Completed, "%b %d, %Y")
+                style = "font-size: 15px; color:#bbb; white-space:nowrap; margin-left:4px;",
+                paste0("Completed: ", format(p$Completed, "%b %d, %Y"))
               )
           ),
           # Project title
           tags$p(
-            style = "font-size:0.85rem; font-weight:600; color:#1a1a1a; margin:0 0 5px 0;",
+            style = "font-size: 15px; font-weight:600; color:#1a1a1a; margin:0 0 5px 0;",
             p$Project
           ),
+          # Resource Offering: the course/program/semester this match ran
+          # under (e.g. "FY25 Fall Rackham Intern Fellows"), for context.
+          if (!is.na(p$Resource.Offering))
+            tags$p(
+              style = "font-size: 15px; color:#666; margin:0 0 2px 0;",
+              tags$strong(style = "color:#00274C;", "Resource Offering: "), p$Resource.Offering
+            ),
           # Aggregated skill areas + form of engagement for this match
           if (!is.na(p$Skill.Areas))
             tags$p(
-              style = "font-size:0.76rem; color:#666; margin:0 0 2px 0;",
+              style = "font-size: 15px; color:#666; margin:0 0 2px 0;",
               tags$strong(style = "color:#00274C;", "Skill Areas: "), p$Skill.Areas
             ),
           if (!is.na(p$Forms.of.Engagement))
             tags$p(
-              style = "font-size:0.76rem; color:#666; margin:0;",
+              style = "font-size: 15px; color:#666; margin:0 0 2px 0;",
               tags$strong(style = "color:#00274C;", "Form of Engagement: "), p$Forms.of.Engagement
+            ),
+          # School/College/Unit: the U-M school, college, or unit involved
+          # in this match, from the matches data's UM Connection column.
+          if (!is.na(p$UM.Connection))
+            tags$p(
+              style = "font-size: 15px; color:#666; margin:0;",
+              tags$strong(style = "color:#00274C;", "School/College/Unit: "), p$UM.Connection
             )
         )
       })
@@ -1650,7 +1764,7 @@ server <- function(input, output, session) {
           tags$span(
             style = paste0(
               "display:inline-block;padding:2px 10px;border-radius:20px;",
-              "font-size:0.7rem;font-weight:700;",
+              "font-size: 15px;font-weight:700;",
               if (org$Ginsberg.Partner.Status == "Active")
                 "background:#198754;color:#fff;"
               else
@@ -1661,30 +1775,27 @@ server <- function(input, output, session) {
       ),
       
       # ── Stats: total matches + partnership length ────────────────────────
-      # Placeholder text until "Total Matches" and "Created Date" land in the
-      # data (expected Thursday) - see the "Upcoming fields" note near the
-      # top of the file.
       tags$div(
         style = "display:flex; gap:22px; margin-bottom:14px;",
         tags$div(
           tags$p(
-            style = "font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:#00274C;margin-bottom:3px;",
+            style = "font-size: 15px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:#00274C;margin-bottom:3px;",
             "Total Matches"
           ),
           if (!is.na(org$Total.Matches))
-            tags$p(style = "font-size:1.05rem;font-weight:700;color:#1a1a1a;margin:0;", org$Total.Matches)
+            tags$p(style = "font-size: 16px;font-weight:700;color:#1a1a1a;margin:0;", org$Total.Matches)
           else
-            tags$p(style = "font-size:0.78rem;font-weight:500;color:#bbb;font-style:italic;margin:0;", "Coming soon")
+            tags$p(style = "font-size: 15px;font-weight:500;color:#bbb;font-style:italic;margin:0;", "Coming soon")
         ),
         tags$div(
           tags$p(
-            style = "font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:#00274C;margin-bottom:3px;",
+            style = "font-size: 15px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:#00274C;margin-bottom:3px;",
             "Partner Since"
           ),
           if (!is.na(org$Created.Date))
-            tags$p(style = "font-size:0.9rem;font-weight:700;color:#1a1a1a;margin:0;", format_partner_since(org$Created.Date))
+            tags$p(style = "font-size: 15px;font-weight:700;color:#1a1a1a;margin:0;", format_partner_since(org$Created.Date))
           else
-            tags$p(style = "font-size:0.78rem;font-weight:500;color:#bbb;font-style:italic;margin:0;", "Coming soon")
+            tags$p(style = "font-size: 15px;font-weight:500;color:#bbb;font-style:italic;margin:0;", "Coming soon")
         )
       ),
       
@@ -1697,7 +1808,7 @@ server <- function(input, output, session) {
             # Address
             if (!is.na(org$Billing.Address.Line.1) && org$Billing.Address.Line.1 != "")
               tags$p(
-                style = "font-size:0.82rem;color:#666;white-space:pre-line;margin-bottom:12px;",
+                style = "font-size: 15px;color:#666;white-space:pre-line;margin-bottom:12px;",
                 addr
               ),
             # Focus area badges
@@ -1707,7 +1818,7 @@ server <- function(input, output, session) {
               tags$div(
                 style = "margin-bottom:14px;",
                 tags$p(
-                  style = "font-size:0.67rem;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:#00274C;margin-bottom:7px;",
+                  style = "font-size: 15px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:#00274C;margin-bottom:7px;",
                   "Focus Areas"
                 ),
                 tagList(lapply(cat_vals, function(cat) {
@@ -1716,7 +1827,7 @@ server <- function(input, output, session) {
                     style = paste0(
                       "background:", bg, ";color:#fff;",
                       "padding:3px 10px;border-radius:20px;",
-                      "font-size:0.73rem;font-weight:500;",
+                      "font-size: 15px;font-weight:500;",
                       "margin:2px;display:inline-block;"
                     ),
                     cat
@@ -1724,18 +1835,28 @@ server <- function(input, output, session) {
                 }))
               )
             },
-            # Description
-            if (!is.na(org$Description) && org$Description != "")
-              tags$div(
-                tags$p(
-                  style = "font-size:0.67rem;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:#00274C;margin-bottom:5px;",
-                  "About"
-                ),
-                tags$p(
-                  style = "font-size:0.8rem;color:#555;line-height:1.55;margin:0;",
-                  org$Description
+            # About: prefer Description, fall back to Mission Statement
+            # when there's no description on file for this org.
+            {
+              about_text <- if (!is.na(org$Description) && org$Description != "")
+                org$Description
+              else if (!is.na(org$Mission.Statement) && org$Mission.Statement != "")
+                org$Mission.Statement
+              else
+                NA_character_
+              
+              if (!is.na(about_text))
+                tags$div(
+                  tags$p(
+                    style = "font-size: 15px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:#00274C;margin-bottom:5px;",
+                    "About"
+                  ),
+                  tags$p(
+                    style = "font-size: 15px;color:#555;line-height:1.55;margin:0;",
+                    about_text
+                  )
                 )
-              )
+            }
           )
         ),
         nav_panel(
