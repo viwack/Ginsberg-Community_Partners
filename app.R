@@ -143,6 +143,8 @@ org_overrides <- c(
   "RGI"  = "Refugee Garden Initiatives"
 )
 
+# Derives a fiscal year label (e.g. "FY25") from a completed-match date -
+# fiscal year runs July-June, so a date in Sept 2024 is FY25.
 fy_label <- function(d) {
   yr     <- as.integer(format(d, "%Y"))
   mo     <- as.integer(format(d, "%m"))
@@ -464,11 +466,11 @@ stat_tile <- function(number, label, color = "#00274C") {
 
 
 field_table <- function(rows) {
-  th_style <- "text-align:left;padding:6px 10px;border-bottom:2px solid #e8edf2;color:#00274C;font-size: 16px;text-transform:uppercase;letter-spacing:0.05em;"
+  th_style <- "text-align:left;padding:6px 10px;border-bottom:2px solid #e8edf2;color:#00274C;font-size: 15px;text-transform:uppercase;letter-spacing:0.05em;"
   td1_style <- "padding:7px 10px;border-bottom:1px solid #f0f2f5;font-weight:600;color:#333;white-space:nowrap;vertical-align:top;"
   td2_style <- "padding:7px 10px;border-bottom:1px solid #f0f2f5;color:#555;line-height:1.5;"
   tags$table(
-    style = "width:100%; border-collapse:collapse; font-size: 16px;",
+    style = "width:100%; border-collapse:collapse; font-size: 15px;",
     tags$thead(
       tags$tr(tags$th(style = th_style, "Field"), tags$th(style = th_style, "Description"))
     ),
@@ -489,24 +491,24 @@ make_label <- function(data) {
     grp_col <- if (!is.na(grp)) group_pal(grp) else "#888888"
     
     status_line <- if (!is.na(o$Ginsberg.Partner.Status) && o$Ginsberg.Partner.Status != "")
-      paste0("<div style='font-size: 16px;color:#666;margin-top:2px;'>",
+      paste0("<div style='font-size: 15px;color:#666;margin-top:2px;'>",
              o$Ginsberg.Partner.Status, " Partner</div>")
     else ""
     
     group_line <- if (!is.na(grp))
       paste0("<div style='margin-top:5px;'><span style='background:", grp_col,
-             ";color:#fff;padding:2px 9px;border-radius:20px;font-size: 16px;font-weight:600;'>",
+             ";color:#fff;padding:2px 9px;border-radius:20px;font-size: 15px;font-weight:600;'>",
              grp, "</span></div>")
     else ""
     
     city_line <- if (!is.na(o$Billing.City) && o$Billing.City != "")
-      paste0("<div style='font-size: 16px;color:#888;margin-top:4px;'>",
+      paste0("<div style='font-size: 15px;color:#888;margin-top:4px;'>",
              o$Billing.City, ", ", o$Billing.State.Province, "</div>")
     else ""
     
     HTML(paste0(
       "<div style='font-family:system-ui,-apple-system,sans-serif;padding:5px 7px;min-width:170px;'>",
-      "<strong style='font-size: 16px;color:#1a1a1a;'>", htmlEscape(o$Account.Name), "</strong>",
+      "<strong style='font-size: 15px;color:#1a1a1a;'>", htmlEscape(o$Account.Name), "</strong>",
       status_line, group_line, city_line,
       "</div>"
     ))
@@ -521,18 +523,18 @@ make_popup <- function(o) {
     bg  <- if (o$Ginsberg.Partner.Status == "Active") "#198754" else "#e6a817"
     txt <- if (o$Ginsberg.Partner.Status == "Active") "#fff" else "#1a1a1a"
     paste0("<span style='background:", bg, ";color:", txt,
-           ";padding:3px 10px;border-radius:20px;font-size: 16px;font-weight:700;margin-right:5px;'>",
+           ";padding:3px 10px;border-radius:20px;font-size: 15px;font-weight:700;margin-right:5px;'>",
            o$Ginsberg.Partner.Status, "</span>")
   } else ""
   
   group_badge <- if (!is.na(grp))
     paste0("<span style='background:", grp_col,
-           ";color:#fff;padding:3px 10px;border-radius:20px;font-size: 16px;font-weight:700;'>",
+           ";color:#fff;padding:3px 10px;border-radius:20px;font-size: 15px;font-weight:700;'>",
            grp, "</span>")
   else ""
   
   addr_line <- if (!is.na(o$Billing.Address.Line.1) && o$Billing.Address.Line.1 != "")
-    paste0("<div style='font-size: 16px;color:#555;margin-top:8px;line-height:1.45;'>",
+    paste0("<div style='font-size: 15px;color:#555;margin-top:8px;line-height:1.45;'>",
            htmlEscape(o$Billing.Address.Line.1), "<br>",
            htmlEscape(o$Billing.City), ", ", o$Billing.State.Province,
            " ", o$Billing.Zip.Postal.Code, "</div>")
@@ -540,7 +542,7 @@ make_popup <- function(o) {
   
   website_line <- if (!is.na(o$Website) && o$Website != "")
     paste0("<div style='margin-top:7px;'><a href='", o$Website,
-           "' target='_blank' rel='noopener' style='font-size: 16px;color:#4e79a7;text-decoration:none;'>",
+           "' target='_blank' rel='noopener' style='font-size: 15px;color:#4e79a7;text-decoration:none;'>",
            "\U0001F517 ", htmlEscape(o$Website), "</a></div>")
   else ""
   
@@ -557,18 +559,18 @@ make_popup <- function(o) {
     "<span style='color:#bbb;font-style:italic;'>Partnership length coming soon</span>"
   
   stats_line <- paste0(
-    "<div style='font-size: 16px;color:#555;margin-top:8px;line-height:1.6;'>",
+    "<div style='font-size: 15px;color:#555;margin-top:8px;line-height:1.6;'>",
     matches_text, " &nbsp;\u2022&nbsp; ", since_text,
     "</div>"
   )
   
   HTML(paste0(
     "<div style='font-family:system-ui,-apple-system,sans-serif;min-width:250px;max-width:320px;padding:6px 2px;'>",
-    "<div style='font-size: 17px;font-weight:700;color:#00274C;line-height:1.25;margin-bottom:9px;'>",
+    "<div style='font-size: 15px;font-weight:700;color:#00274C;line-height:1.25;margin-bottom:9px;'>",
     htmlEscape(o$Account.Name), "</div>",
     "<div style='margin-bottom:4px;'>", status_badge, group_badge, "</div>",
     addr_line, website_line, stats_line,
-    "<div style='font-size: 16px;color:#bbb;margin-top:10px;border-top:1px solid #f0f0f0;padding-top:7px;'>",
+    "<div style='font-size: 15px;color:#bbb;margin-top:10px;border-top:1px solid #f0f0f0;padding-top:7px;'>",
     "See sidebar for full details &amp; matches &rarr;</div>",
     "</div>"
   ))
@@ -607,7 +609,7 @@ ui <- page_navbar(
     tags$img(id = "brand-logo", src = "Edward-Ginsberg-Center_web-logo.png", height = "50", style = "display:block; margin-left: 70px;"),
     tags$span(
       class = "brand-text",
-      style = "font-weight:700; letter-spacing:-0.2px; color:rgba(255,255,255,0.85); font-size: 18px;",
+      style = "font-weight:700; letter-spacing:-0.2px; color:rgba(255,255,255,0.85); font-size: 16px;",
       "Community Partners"
     )
   ),
@@ -635,7 +637,7 @@ ui <- page_navbar(
          This root size itself still only affects truly unstyled text
          (default Bootstrap elements with no font-size override, which
          is covered by font-size-base in the theme above instead). */
-      html { font-size: 17px; }
+      html { font-size: 15px; }
 
       /* ── Navbar: tall navy logo band + maize nav-link band underneath ──
          (mirrors the Ginsberg Center site's own header structure) */
@@ -666,7 +668,7 @@ ui <- page_navbar(
         padding: 0 55px;
       }
       .navbar-nav .nav-link {
-        font-weight: 700; font-size: 16px; padding: 0.85rem 1.1rem;
+        font-weight: 700; font-size: 15px; padding: 0.85rem 1.1rem;
         color: #1a1a1a !important;
       }
       .navbar-nav .nav-link:hover { color: #00274C !important; background: rgba(0,0,0,0.05); }
@@ -685,14 +687,14 @@ ui <- page_navbar(
       /* ── Sidebar ────────────────────────────────────────────────────── */
       .bslib-sidebar-layout > .sidebar { background: #ffffff !important; border-right: 1px solid #e4e8ee; }
       .sidebar-section-label {
-        font-size: 16px; font-weight: 700; text-transform: uppercase;
+        font-size: 15px; font-weight: 700; text-transform: uppercase;
         letter-spacing: 0.09em; color: #00274C; margin: 0 0 6px 0;
       }
 
       /* ── Community Priority / Engagement / Skill / SCU listboxes ──────── */
       #priority_filter, #engagement_filter, #skill_filter, #scu_filter {
         border-radius: 8px !important; border: 1px solid #dde2e8 !important;
-        font-size: 16px; overflow-y: auto;
+        font-size: 15px; overflow-y: auto;
       }
       #priority_filter option, #engagement_filter option,
       #skill_filter option, #scu_filter option { padding: 7px 10px; line-height: 1.5; }
@@ -713,7 +715,7 @@ ui <- page_navbar(
       .leaflet-popup-tip-container { display: none !important; }
       .leaflet-popup-close-button {
         top: 8px !important; right: 10px !important;
-        font-size: 19px !important; color: #999 !important;
+        font-size: 17px !important; color: #999 !important;
       }
 
       /* ── Map legend ─────────────────────────────────────────────────── */
@@ -721,7 +723,7 @@ ui <- page_navbar(
         background: rgba(255,255,255,0.95) !important;
         border-radius: 10px !important;
         box-shadow: 0 2px 12px rgba(0,0,0,0.12) !important;
-        font-size: 16px !important;
+        font-size: 15px !important;
         padding: 10px 14px !important;
         line-height: 1.6 !important;
       }
@@ -735,10 +737,10 @@ ui <- page_navbar(
         margin-bottom: 12px;
       }
       .about-title {
-        font-weight: 700; font-size: 16px; color: #00274C; margin-bottom: 9px;
+        font-weight: 700; font-size: 15px; color: #00274C; margin-bottom: 9px;
       }
       .about-box p {
-        font-size: 16px; color: #444; line-height: 1.55; margin-bottom: 7px;
+        font-size: 15px; color: #444; line-height: 1.55; margin-bottom: 7px;
       }
       .about-box p:last-child { margin-bottom: 0; }
 
@@ -746,16 +748,16 @@ ui <- page_navbar(
       .instruction-box {
         background: #e8f0fe; border-radius: 8px;
         padding: 10px 13px; margin-top: 4px;
-        font-size: 16px; color: #1a3a6b; line-height: 1.45;
+        font-size: 15px; color: #1a3a6b; line-height: 1.45;
       }
 
       /* ── Org panel ──────────────────────────────────────────────────── */
       .org-name {
-        font-size: 17px; font-weight: 700; color: #00274C;
+        font-size: 15px; font-weight: 700; color: #00274C;
         line-height: 1.3; margin-bottom: 3px;
       }
       .org-website {
-        font-size: 16px; color: #4e79a7 !important;
+        font-size: 15px; color: #4e79a7 !important;
         text-decoration: none !important; display: block; margin-bottom: 5px;
       }
       .org-website:hover { text-decoration: underline !important; }
@@ -791,7 +793,7 @@ ui <- page_navbar(
         margin-top: 8px; margin-bottom: 4px;
       }
       .selected-tag {
-        display: inline-block; font-size: 16px; font-weight: 600;
+        display: inline-block; font-size: 15px; font-weight: 600;
         padding: 3px 10px; border-radius: 20px;
         background: #eef1f5; color: #00274C;
         white-space: nowrap;
@@ -799,10 +801,10 @@ ui <- page_navbar(
 
       /* ── Live result count pill (top of Filters section) ─────────────── */
       .result-count-pill {
-        font-size: 16px; color: #444; background: #f0f4f8;
+        font-size: 15px; color: #444; background: #f0f4f8;
         border-radius: 8px; padding: 8px 12px; margin-bottom: 14px;
       }
-      .result-count-pill strong { color: #00274C; font-size: 16px; }
+      .result-count-pill strong { color: #00274C; font-size: 15px; }
       .result-count-pill.result-count-zero {
         background: #fdf3e7; color: #9a5b00; font-weight: 600;
       }
@@ -839,7 +841,7 @@ ui <- page_navbar(
         border: 1px solid #e4e8ee;
         border-radius: 20px;
         padding: 7px 14px;
-        font-size: 16px;
+        font-size: 15px;
         color: #555;
         box-shadow: 0 2px 10px rgba(0,0,0,0.12);
         pointer-events: none;
@@ -850,7 +852,7 @@ ui <- page_navbar(
         display: inline-flex;
         align-items: center;
         gap: 5px;
-        font-size: 16px;
+        font-size: 15px;
         font-weight: 600;
         color: #666 !important;
         text-decoration: none !important;
@@ -867,7 +869,7 @@ ui <- page_navbar(
       /* ── Nav tabs in sidebar ────────────────────────────────────────── */
       .nav-tabs { border-bottom: 2px solid #e8edf2 !important; }
       .nav-tabs .nav-link {
-        font-size: 16px; font-weight: 500; color: #666;
+        font-size: 15px; font-weight: 500; color: #666;
         border: none !important; padding: 6px 12px;
       }
       .nav-tabs .nav-link.active {
@@ -879,7 +881,7 @@ ui <- page_navbar(
 
       /* ── Infographics ──────────────────────────────────────────────── */
       .infographic-section-title {
-        font-size: 16px; font-weight: 700; color: #00274C;
+        font-size: 15px; font-weight: 700; color: #00274C;
         margin-bottom: 14px; padding-bottom: 8px;
         border-bottom: 2px solid #FFCB05;
       }
@@ -894,13 +896,13 @@ ui <- page_navbar(
         text-align: center;
         border: 1px solid #eef1f5;
       }
-      .stat-number { font-size: 29px; font-weight: 800; line-height: 1.1; }
+      .stat-number { font-size: 26px; font-weight: 800; line-height: 1.1; }
       .stat-label {
-        font-size: 16px; font-weight: 600; color: #888;
+        font-size: 15px; font-weight: 600; color: #888;
         text-transform: uppercase; letter-spacing: 0.06em; margin-top: 5px;
       }
       .chart-card-title {
-        font-size: 16px; font-weight: 700; color: #00274C;
+        font-size: 15px; font-weight: 700; color: #00274C;
         text-transform: uppercase; letter-spacing: 0.06em;
         margin-bottom: 8px;
       }
@@ -921,7 +923,7 @@ ui <- page_navbar(
              (collapsible drawer) and plotly charts are already responsive
              on their own and don't need help here. ────────────────────── */
       @media (max-width: 768px) {
-        html { font-size: 16px; }
+        html { font-size: 15px; }
 
         .navbar-brand {
           padding: 14px 16px !important;
@@ -931,12 +933,12 @@ ui <- page_navbar(
           height: 34px !important;
           margin-left: 0 !important;
         }
-        .brand-text { font-size: 16px !important; }
+        .brand-text { font-size: 15px !important; }
 
         .navbar-nav { padding: 0 10px !important; }
         .navbar-nav .nav-link {
           padding: 0.7rem 0.85rem !important;
-          font-size: 16px !important;
+          font-size: 15px !important;
         }
         .navbar-toggler { margin: 10px 14px !important; }
 
@@ -1051,10 +1053,10 @@ ui <- page_navbar(
           style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;",
           tags$p(class = "sidebar-section-label", style = "margin:0;", "Community Priority"),
           actionLink("clear_filter", "Clear",
-                     style = "font-size: 16px; color:#aaa; text-decoration:none;")
+                     style = "font-size: 15px; color:#aaa; text-decoration:none;")
         ),
         tags$p(
-          style = "font-size: 16px; color:#bbb; margin-bottom:8px; line-height:1.4;",
+          style = "font-size: 15px; color:#bbb; margin-bottom:8px; line-height:1.4;",
           "Hold Ctrl (Windows) or \u2318 Cmd (Mac) to select multiple."
         ),
         selectInput(
@@ -1069,12 +1071,12 @@ ui <- page_navbar(
           tags$p(class = "sidebar-section-label", style = "margin:0;", "Skill Area"),
           if (length(skill_choices) > 0)
             actionLink("clear_skill_filter", "Clear",
-                       style = "font-size: 16px; color:#aaa; text-decoration:none;")
+                       style = "font-size: 15px; color:#aaa; text-decoration:none;")
         ),
         if (length(skill_choices) > 0) {
           tagList(
             tags$p(
-              style = "font-size: 16px; color:#bbb; margin-bottom:8px; line-height:1.4;",
+              style = "font-size: 15px; color:#bbb; margin-bottom:8px; line-height:1.4;",
               "Hold Ctrl (Windows) or \u2318 Cmd (Mac) to select multiple."
             ),
             selectInput(
@@ -1085,19 +1087,19 @@ ui <- page_navbar(
             uiOutput("skill_selected_tags")
           )
         } else
-          tags$p(style = "font-size: 16px;color:#bbb;font-style:italic;", "No match data available yet."),
+          tags$p(style = "font-size: 15px;color:#bbb;font-style:italic;", "No match data available yet."),
         tags$hr(style = "margin: 14px 0; border-color: #e8edf2;"),
         tags$div(
           style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;",
           tags$p(class = "sidebar-section-label", style = "margin:0;", "Form of Engagement"),
           if (length(engagement_choices) > 0)
             actionLink("clear_engagement_filter", "Clear",
-                       style = "font-size: 16px; color:#aaa; text-decoration:none;")
+                       style = "font-size: 15px; color:#aaa; text-decoration:none;")
         ),
         if (length(engagement_choices) > 0) {
           tagList(
             tags$p(
-              style = "font-size: 16px; color:#bbb; margin-bottom:8px; line-height:1.4;",
+              style = "font-size: 15px; color:#bbb; margin-bottom:8px; line-height:1.4;",
               "Hold Ctrl (Windows) or \u2318 Cmd (Mac) to select multiple."
             ),
             selectInput(
@@ -1108,19 +1110,19 @@ ui <- page_navbar(
             uiOutput("engagement_selected_tags")
           )
         } else
-          tags$p(style = "font-size: 16px;color:#bbb;font-style:italic;", "No match data available yet."),
+          tags$p(style = "font-size: 15px;color:#bbb;font-style:italic;", "No match data available yet."),
         tags$hr(style = "margin: 14px 0; border-color: #e8edf2;"),
         tags$div(
           style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;",
           tags$p(class = "sidebar-section-label", style = "margin:0;", "School / College / Unit"),
           if (length(scu_choices) > 0)
             actionLink("clear_scu_filter", "Clear",
-                       style = "font-size: 16px; color:#aaa; text-decoration:none;")
+                       style = "font-size: 15px; color:#aaa; text-decoration:none;")
         ),
         if (length(scu_choices) > 0) {
           tagList(
             tags$p(
-              style = "font-size: 16px; color:#bbb; margin-bottom:8px; line-height:1.4;",
+              style = "font-size: 15px; color:#bbb; margin-bottom:8px; line-height:1.4;",
               "Hold Ctrl (Windows) or \u2318 Cmd (Mac) to select multiple."
             ),
             selectInput(
@@ -1131,7 +1133,7 @@ ui <- page_navbar(
             uiOutput("scu_selected_tags")
           )
         } else
-          tags$p(style = "font-size: 16px;color:#bbb;font-style:italic;", "No match data available yet.")
+          tags$p(style = "font-size: 15px;color:#bbb;font-style:italic;", "No match data available yet.")
       ),
       div(
         style = "position:relative; height:100%; display:flex;",
@@ -1169,7 +1171,7 @@ ui <- page_navbar(
         card_header("Accounts with No Geographic Data"),
         card_body(
           tags$p(
-            style = "font-size: 16px; color:#888; margin-bottom:12px; line-height:1.45;",
+            style = "font-size: 15px; color:#888; margin-bottom:12px; line-height:1.45;",
             "These accounts don't have a usable address on file, so they can't be placed on the map yet. ",
             "Click a row to see their details and matched projects."
           ),
@@ -1191,7 +1193,7 @@ ui <- page_navbar(
             
             accordion_panel(
               "Accounts Data",
-              tags$p(style = "font-size:16px;color:#888;margin-bottom:10px;",
+              tags$p(style = "font-size: 15px;color:#888;margin-bottom:10px;",
                      "From ", tags$code("Accounts_wideCategories_Geocoded.csv"), ", one row per community partner."),
               field_table(list(
                 c("Account Name", "The organization's official name."),
@@ -1209,7 +1211,7 @@ ui <- page_navbar(
             
             accordion_panel(
               "Matches Data",
-              tags$p(style = "font-size: 16px;color:#888;margin-bottom:10px;",
+              tags$p(style = "font-size: 15px;color:#888;margin-bottom:10px;",
                      "From ", tags$code("Matches_Final.csv"), ", built by ", tags$code("data_processing.R"),
                      " from the FY25-26 matches export. One row per (Org, Project, FY, tag) - a
                      match with 2 Skill Areas and 1 Form of Engagement becomes 3 rows here."),
@@ -1228,18 +1230,18 @@ ui <- page_navbar(
             
             accordion_panel(
               "Community Priority Groups",
-              tags$p(style = "font-size: 16px;color:#888;margin-bottom:10px;",
+              tags$p(style = "font-size: 15px;color:#888;margin-bottom:10px;",
                      "The 15 values used for map coloring and the Community Priority filter, taken directly from
                      Category 1\u20139."),
-              tags$ul(style = "font-size: 16px;color:#555;padding-left:18px;margin:0;",
+              tags$ul(style = "font-size: 15px;color:#555;padding-left:18px;margin:0;",
                       lapply(names(group_map), tags$li))
             ),
             
             accordion_panel(
               "Skill Area Groups",
-              tags$p(style = "font-size: 16px;color:#888;margin-bottom:10px;",
+              tags$p(style = "font-size: 15px;color:#888;margin-bottom:10px;",
                      "The 9 values used for the Skill Area filter, taken directly from Skill Area 1\u20133."),
-              tags$ul(style = "font-size: 16px;color:#555;padding-left:18px;margin:0;",
+              tags$ul(style = "font-size: 15px;color:#555;padding-left:18px;margin:0;",
                       lapply(names(skill_group_map), tags$li))
             ),
             
@@ -1258,7 +1260,7 @@ ui <- page_navbar(
             accordion_panel(
               "Known Data Quality Notes",
               tags$ul(
-                style = "font-size: 16px;color:#555;line-height:1.7;padding-left:20px;",
+                style = "font-size: 15px;color:#555;line-height:1.7;padding-left:20px;",
                 tags$li(paste0(length(no_geo_names), " accounts have no address on file at all and can't be geocoded. They're excluded from the map and listed on the \u201cAccounts with No Geographic Data\u201d tab.")),
                 tags$li("Two accounts (Detroit People's Platform; Next Chapter Bookclub of Saline) had bad source addresses that geocoded to another country. Both were manually corrected with verified addresses/coordinates."),
                 tags$li("The Infographics tab's Southeast Michigan / Rest of Michigan split is a rough latitude/longitude bounding-box approximation, not actual county boundaries.")
@@ -1301,7 +1303,7 @@ ui <- page_navbar(
               class = "chart-panel",
               tags$div(class = "chart-card-title", "Top 3 Community Priority Areas"),
               tags$p(
-                style = "font-size: 16px;color:#999;margin-top:-4px;margin-bottom:10px;",
+                style = "font-size: 15px;color:#999;margin-top:-4px;margin-bottom:10px;",
                 "By number of partners working in that area"
               ),
               plotlyOutput("top3_priority_bar", height = "220px")
@@ -1336,7 +1338,7 @@ ui <- page_navbar(
           ),
           
           tags$p(
-            style = "font-size: 16px;color:#888;margin-bottom:10px;",
+            style = "font-size: 15px;color:#888;margin-bottom:10px;",
             "Most common skill areas, forms of engagement, and community priorities among matches in the last 2 fiscal years:"
           ),
           layout_columns(
@@ -1371,7 +1373,7 @@ ui <- page_navbar(
         card_body(
           tags$div(class = "infographic-section-title", "About This Map"),
           tags$p(
-            style = "font-size: 16px;color:#444;line-height:1.65;margin-bottom:14px;",
+            style = "font-size: 15px;color:#444;line-height:1.65;margin-bottom:14px;",
             "This site visualizes the Edward Ginsberg Center's community partnerships. It displays where our ",
             "partners are located, what they focus on, and the matches we've facilitated between them ",
             "and University of Michigan students, faculty, and staff."
@@ -1461,7 +1463,7 @@ server <- function(input, output, session) {
       tags$div(
         style = "margin-top:-8px; margin-bottom:14px;",
         actionLink("clear_all_filters", "Clear all filters",
-                   style = "font-size: 16px; color:#aaa; text-decoration:none;")
+                   style = "font-size: 15px; color:#aaa; text-decoration:none;")
       )
     )
   })
@@ -1689,7 +1691,7 @@ server <- function(input, output, session) {
     # not one per skill-area tag that match happened to carry.
     if (nrow(org_projects) == 0) {
       proj_html <- tags$p(
-        style = "color:#aaa; font-style:italic; font-size: 16px;",
+        style = "color:#aaa; font-style:italic; font-size: 15px;",
         "No matched projects on record."
       )
     } else {
@@ -1704,43 +1706,43 @@ server <- function(input, output, session) {
             style = "display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;",
             tags$span(
               style = paste0("background:", fy_bg, ";color:", fy_txt,
-                             ";padding:2px 9px;border-radius:20px;font-size: 16px;font-weight:700;"),
+                             ";padding:2px 9px;border-radius:20px;font-size: 15px;font-weight:700;"),
               p$FY
             ),
             if (!is.na(p$Completed))
               tags$span(
-                style = "font-size: 16px; color:#bbb; white-space:nowrap; margin-left:4px;",
+                style = "font-size: 15px; color:#bbb; white-space:nowrap; margin-left:4px;",
                 paste0("Completed: ", format(p$Completed, "%b %d, %Y"))
               )
           ),
           # Project title
           tags$p(
-            style = "font-size: 16px; font-weight:600; color:#1a1a1a; margin:0 0 5px 0;",
+            style = "font-size: 15px; font-weight:600; color:#1a1a1a; margin:0 0 5px 0;",
             p$Project
           ),
           # Resource Offering: the course/program/semester this match ran
           # under (e.g. "FY25 Fall Rackham Intern Fellows"), for context.
           if (!is.na(p$Resource.Offering))
             tags$p(
-              style = "font-size: 16px; color:#666; margin:0 0 2px 0;",
+              style = "font-size: 15px; color:#666; margin:0 0 2px 0;",
               tags$strong(style = "color:#00274C;", "Resource Offering: "), p$Resource.Offering
             ),
           # Aggregated skill areas + form of engagement for this match
           if (!is.na(p$Skill.Areas))
             tags$p(
-              style = "font-size: 16px; color:#666; margin:0 0 2px 0;",
+              style = "font-size: 15px; color:#666; margin:0 0 2px 0;",
               tags$strong(style = "color:#00274C;", "Skill Areas: "), p$Skill.Areas
             ),
           if (!is.na(p$Forms.of.Engagement))
             tags$p(
-              style = "font-size: 16px; color:#666; margin:0 0 2px 0;",
+              style = "font-size: 15px; color:#666; margin:0 0 2px 0;",
               tags$strong(style = "color:#00274C;", "Form of Engagement: "), p$Forms.of.Engagement
             ),
           # School/College/Unit: the U-M school, college, or unit involved
           # in this match, from the matches data's UM Connection column.
           if (!is.na(p$UM.Connection))
             tags$p(
-              style = "font-size: 16px; color:#666; margin:0;",
+              style = "font-size: 15px; color:#666; margin:0;",
               tags$strong(style = "color:#00274C;", "School/College/Unit: "), p$UM.Connection
             )
         )
@@ -1762,7 +1764,7 @@ server <- function(input, output, session) {
           tags$span(
             style = paste0(
               "display:inline-block;padding:2px 10px;border-radius:20px;",
-              "font-size: 16px;font-weight:700;",
+              "font-size: 15px;font-weight:700;",
               if (org$Ginsberg.Partner.Status == "Active")
                 "background:#198754;color:#fff;"
               else
@@ -1777,23 +1779,23 @@ server <- function(input, output, session) {
         style = "display:flex; gap:22px; margin-bottom:14px;",
         tags$div(
           tags$p(
-            style = "font-size: 16px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:#00274C;margin-bottom:3px;",
+            style = "font-size: 15px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:#00274C;margin-bottom:3px;",
             "Total Matches"
           ),
           if (!is.na(org$Total.Matches))
-            tags$p(style = "font-size: 18px;font-weight:700;color:#1a1a1a;margin:0;", org$Total.Matches)
+            tags$p(style = "font-size: 16px;font-weight:700;color:#1a1a1a;margin:0;", org$Total.Matches)
           else
-            tags$p(style = "font-size: 16px;font-weight:500;color:#bbb;font-style:italic;margin:0;", "Coming soon")
+            tags$p(style = "font-size: 15px;font-weight:500;color:#bbb;font-style:italic;margin:0;", "Coming soon")
         ),
         tags$div(
           tags$p(
-            style = "font-size: 16px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:#00274C;margin-bottom:3px;",
+            style = "font-size: 15px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:#00274C;margin-bottom:3px;",
             "Partner Since"
           ),
           if (!is.na(org$Created.Date))
-            tags$p(style = "font-size: 16px;font-weight:700;color:#1a1a1a;margin:0;", format_partner_since(org$Created.Date))
+            tags$p(style = "font-size: 15px;font-weight:700;color:#1a1a1a;margin:0;", format_partner_since(org$Created.Date))
           else
-            tags$p(style = "font-size: 16px;font-weight:500;color:#bbb;font-style:italic;margin:0;", "Coming soon")
+            tags$p(style = "font-size: 15px;font-weight:500;color:#bbb;font-style:italic;margin:0;", "Coming soon")
         )
       ),
       
@@ -1806,7 +1808,7 @@ server <- function(input, output, session) {
             # Address
             if (!is.na(org$Billing.Address.Line.1) && org$Billing.Address.Line.1 != "")
               tags$p(
-                style = "font-size: 16px;color:#666;white-space:pre-line;margin-bottom:12px;",
+                style = "font-size: 15px;color:#666;white-space:pre-line;margin-bottom:12px;",
                 addr
               ),
             # Focus area badges
@@ -1816,7 +1818,7 @@ server <- function(input, output, session) {
               tags$div(
                 style = "margin-bottom:14px;",
                 tags$p(
-                  style = "font-size: 16px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:#00274C;margin-bottom:7px;",
+                  style = "font-size: 15px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:#00274C;margin-bottom:7px;",
                   "Focus Areas"
                 ),
                 tagList(lapply(cat_vals, function(cat) {
@@ -1825,7 +1827,7 @@ server <- function(input, output, session) {
                     style = paste0(
                       "background:", bg, ";color:#fff;",
                       "padding:3px 10px;border-radius:20px;",
-                      "font-size: 16px;font-weight:500;",
+                      "font-size: 15px;font-weight:500;",
                       "margin:2px;display:inline-block;"
                     ),
                     cat
@@ -1846,11 +1848,11 @@ server <- function(input, output, session) {
               if (!is.na(about_text))
                 tags$div(
                   tags$p(
-                    style = "font-size: 16px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:#00274C;margin-bottom:5px;",
+                    style = "font-size: 15px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:#00274C;margin-bottom:5px;",
                     "About"
                   ),
                   tags$p(
-                    style = "font-size: 16px;color:#555;line-height:1.55;margin:0;",
+                    style = "font-size: 15px;color:#555;line-height:1.55;margin:0;",
                     about_text
                   )
                 )
