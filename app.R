@@ -143,6 +143,13 @@ org_overrides <- c(
   "RGI"  = "Refugee Garden Initiatives"
 )
 
+fy_label <- function(d) {
+  yr     <- as.integer(format(d, "%Y"))
+  mo     <- as.integer(format(d, "%m"))
+  fy_end <- ifelse(mo >= 7, yr + 1, yr)
+  ifelse(is.na(d), NA_character_, paste0("FY", sprintf("%02d", fy_end %% 100)))
+}
+
 load_matches <- function(path = "Matches_Final.csv",
                          xlsx_path = "Mapping CP Network.xlsx") {
   raw <- read.csv(path, check.names = FALSE)
