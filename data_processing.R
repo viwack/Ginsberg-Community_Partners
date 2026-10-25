@@ -60,18 +60,24 @@ library(tidygeocoder)
 # write.csv(acc_cat_geo, "Accounts_wideCategories_Geocoded.csv")
 
 
-# ── Accounts: new taxonomy export ────────────────────────────────────────
-# The new file has 404 orgs (vs. the old 372), uses a different Community
-# Priority taxonomy shared with the new Matches export (`community
-# priority 1`-`7` instead of `Category 1`-`9`), and already has the
-# "Total # of Matches" / "Created Date" columns app.R was built to expect
-# once they showed up. But it drops lat/long, Account ID, and the old
-# Billing Address Line 1/2 + Zip breakdown entirely - so this reshapes it
-# to the column names app.R already reads, carries over coordinates for
-# every org that already existed in the old geocoded file (so we're not
-# re-geocoding ~340 addresses that haven't changed), and geocodes only the
-# orgs that are new.
-new_accounts_raw <- read_csv("SF Accounts Review (NEW Category Framework) - Orgs Addresses and Categories - SF Accounts Review (NEW Category Framework) - Orgs Addresses and Categories.csv")
+# ── One workbook, three sheets ─────────────────────────────────────────────
+# Everything (matches, the old match->account lookup, and accounts) now
+# lives in one workbook instead of three separate files. Update this path
+# if your local filename differs.
+workbook_path <- "Matches (for GC Map).xlsx"
+
+# ── Accounts: new taxonomy export (3rd sheet) ─────────────────────────────
+# 425 orgs now (up from 404), uses the Community Priority taxonomy shared
+# with the Matches sheet (`community priority 1`-`7` instead of the old
+# `Category 1`-`9`), and - genuinely new this time, not just a renamed
+# placeholder - "# of Matches" is actually populated for every row now
+# (it was blank for all 404 orgs in the last export, hence "Coming soon"
+# in app.R; that'll just resolve itself once this flows through, no app.R
+# change needed). Still no lat/long, Account ID, or the old Billing
+# Address Line 1/2 + Zip breakdown, so this still reshapes those, carries
+# over coordinates for orgs that already existed in the old geocoded
+# file, and geocodes only the orgs that are new.
+new_accounts_raw <- read_xlsx(workbook_path, sheet = "All Active and Lead Accounts wi")
 
 # "community priority N" -> "Category N" so app.R's existing
 # cat_cols <- grep("^Category\\.[0-9]+$", ...) regex keeps working as-is -
@@ -82,9 +88,11 @@ names(new_accounts_raw) <- names(new_accounts_raw) %>%
 new_accounts <- new_accounts_raw %>%
   rename(
     `Billing Address Line 1` = `Billing Street`,
-    # "Total # of Matches" -> "Total Matches" so it reads into R as
-    # Total.Matches, matching the name app.R's placeholder code expects.
-    `Total Matches`          = `Total # of Matches`
+    # "# of Matches" -> "Total Matches" so it reads into R as
+    # Total.Matches, matching the name app.R already looks for. (This was
+    # "Total # of Matches" in the last export - the source column got
+    # renamed again, so this rename target had to move with it.)
+    `Total Matches`          = `# of Matches`
   ) %>%
   mutate(
     `Billing Address Line 2`  = NA_character_,
@@ -106,6 +114,17 @@ new_accounts <- new_accounts %>%
 # this export, or ones the old file never resolved). Comment this part out
 # after the first run, same as the old pipeline did - geocoding is slow
 # and only needs to happen once per new address.
+#
+# Uses the US Census geocoder rather than ArcGIS: Census returns NA when
+# it can't confidently match an address, instead of falling back to a
+# city/region-level centroid the way ArcGIS does (ArcGIS will happily
+# return coordinates for something as vague as just a city name). That
+# makes Census the more conservative choice here - a real street address
+# that genuinely can't be matched should end up on the "no geo data" list
+# for someone to check by hand, not silently plotted at an approximate
+# point that looks precise but isn't actually tied to the real address.
+# The tradeoff: Census is pickier about formatting, so a few addresses
+# that "worked" under ArcGIS may come back NA here and need a look.
 to_geocode <- new_accounts %>% filter(is.na(latitude))
 
 # geocode() errors on a 0-row input (tidygeocoder's internal bind_cols()
@@ -114,7 +133,7 @@ to_geocode <- new_accounts %>% filter(is.na(latitude))
 if (nrow(to_geocode) > 0) {
   geocoded <- to_geocode %>%
     select(-latitude, -longitude) %>%
-    geocode(address = Full_Address, method = "arcgis", lat = latitude, long = longitude)
+    geocode(address = Full_Address, method = "census", lat = latitude, long = longitude)
 } else {
   geocoded <- to_geocode
 }
@@ -129,8 +148,15 @@ message(sum(is.na(new_accounts_geo$latitude)), " of ", nrow(new_accounts_geo),
 write.csv(new_accounts_geo, "Accounts_wideCategories_Geocoded.csv", row.names = FALSE)
 
 
-new_matches <- read_csv("Matches (for GC Map) - FY25-26.csv")
+new_matches <- read_xlsx(workbook_path, sheet = "FY25-26")
 head(new_matches)
+
+# Note: this sheet has its own "Community Partner" column now, which looks
+# like it's meant to eventually hold the account name directly - but it's
+# still blank for all 351 rows as of this export, so the match-ID-join
+# resolution below still does the real work for now. Worth re-checking
+# whether "Community Partner" starts getting filled in in a future export,
+# since that would be a cleaner primary source than the join once it does.
 
 str(new_matches)
 
@@ -152,15 +178,15 @@ str(new_matches)
 # a per-match join tells them apart correctly). Only fall back to the
 # colon-split abbreviation for matches that are too new to be in that
 # workbook at all.
-read_old_match_ids <- function(sheet) {
-  read_xlsx("Mapping CP Network.xlsx", sheet = sheet) %>%
-    select(`Match: Match Name`, `Initiative Account`)
-}
-
-old_org_lookup <- bind_rows(
-  read_old_match_ids("FY25"),
-  read_old_match_ids("FY26")
-) %>%
+# This lookup used to come from a separate workbook with a sheet per
+# fiscal year ("Mapping CP Network.xlsx", FY25 + FY26 sheets). It's now
+# "Sheet10" in this same workbook - already combined into one sheet, so
+# there's no FY25/FY26 split to bind_rows() together anymore. Consider
+# renaming this sheet to something clearer (e.g. "Match-Account Lookup")
+# next time this workbook gets regenerated - "Sheet10" is just whatever
+# Excel called it by default.
+old_org_lookup <- read_xlsx(workbook_path, sheet = "Sheet10") %>%
+  select(`Match: Match Name`, `Initiative Account`) %>%
   distinct(`Match: Match Name`, .keep_all = TRUE)
 
 # A few matches aren't in the old workbook at all, so there's no

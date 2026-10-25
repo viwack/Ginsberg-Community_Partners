@@ -8,6 +8,33 @@ library(htmltools)
 library(DT)
 library(plotly)
 
+# ── Flexible date parsing ───────────────────────────────────────────────────
+# data_processing.R used to read dates as plain CSV text ("09/01/2024"),
+# which passed straight through unchanged. It now reads the source
+# workbook with read_xlsx(), which returns a real Date object - and
+# write.csv() serializes a Date column as ISO text ("2024-09-01") by
+# default, not mm/dd/yyyy. Every date field downstream of that switch
+# silently changed format, which is exactly what was breaking FY (and
+# therefore the "recent match" filter) and Partner Since: both were
+# parsing a date that no longer matched the format string they assumed.
+# Handling both formats here, rather than hardcoding one, means a future
+# re-export - in either direction - won't quietly break this again.
+parse_flexible_date <- function(x) {
+  x <- trimws(as.character(x))
+  is_iso <- grepl("^\\d{4}-\\d{2}-\\d{2}$", x)
+  out <- as.Date(rep(NA_character_, length(x)))
+  if (any(is_iso, na.rm = TRUE)) {
+    out[is_iso] <- as.Date(x[is_iso], format = "%Y-%m-%d")
+  }
+  slashed <- !is_iso & grepl("/", x)
+  if (any(slashed, na.rm = TRUE)) {
+    year_part <- sub(".*/", "", x[slashed])
+    fmt       <- ifelse(nchar(year_part) == 4, "%m/%d/%Y", "%m/%d/%y")
+    out[slashed] <- as.Date(x[slashed], format = fmt)
+  }
+  out
+}
+
 # ── Data loading ──────────────────────────────────────────────────────────────
 orgs     <- read.csv("Accounts_wideCategories_Geocoded.csv", stringsAsFactors = FALSE)
 websites <- read.csv("websites.csv", stringsAsFactors = FALSE)
@@ -54,10 +81,7 @@ if (!"Total.Matches" %in% names(orgs)) {
 if (!"Created.Date" %in% names(orgs)) {
   orgs$Created.Date <- as.Date(NA)
 } else {
-  # pull the year out of the Created Date string and turns it into a 4-digit year.
-  year_part <- sub(".*/", "", orgs$Created.Date)
-  fmt <- ifelse(nchar(year_part) == 4, "%m/%d/%Y", "%m/%d/%y")
-  orgs$Created.Date <- as.Date(orgs$Created.Date, format = fmt)
+  orgs$Created.Date <- parse_flexible_date(orgs$Created.Date)
 }
 # Mission Statement backs up Description in the "About" section on an org's page when there's no description on file.
 if (!"Mission.Statement" %in% names(orgs)) {
@@ -167,7 +191,7 @@ load_matches <- function(path = "Matches_Final.csv",
       abbrev    = trimws(sub(":.*$", "", `Initiative: Initiative Name`)),
       Org       = coalesce(`Initiative Account`, unname(org_overrides[abbrev]), abbrev),
       Project   = `Initiative: Initiative Name`,
-      Completed = as.Date(`Match Completed Date`, format = "%m/%d/%Y"),
+      Completed = parse_flexible_date(`Match Completed Date`),
       FY        = fy_label(Completed)
     )
   
@@ -533,11 +557,12 @@ make_popup <- function(o) {
            grp, "</span>")
   else ""
   
+  has_zip <- !is.na(o$Billing.Zip.Postal.Code) && o$Billing.Zip.Postal.Code != ""
   addr_line <- if (!is.na(o$Billing.Address.Line.1) && o$Billing.Address.Line.1 != "")
     paste0("<div style='font-size: 15px;color:#555;margin-top:8px;line-height:1.45;'>",
            htmlEscape(o$Billing.Address.Line.1), "<br>",
            htmlEscape(o$Billing.City), ", ", o$Billing.State.Province,
-           " ", o$Billing.Zip.Postal.Code, "</div>")
+           if (has_zip) paste0(" ", o$Billing.Zip.Postal.Code), "</div>")
   else ""
   
   website_line <- if (!is.na(o$Website) && o$Website != "")
@@ -639,9 +664,46 @@ ui <- page_navbar(
          is covered by font-size-base in the theme above instead). */
       html { font-size: 15px; }
 
+      /* ── Base layout stabilization ────────────────────────────────────
+         Without an explicit height/width here, html/body only take the
+         height of their content by default. The map's 'fillable' height
+         (100% cascaded down from here) and the navbar's 100% width can
+         then both get measured against a stale/incorrect size on mobile,
+         depending on timing - this is what was collapsing the map to
+         near-zero height and intermittently leaving the navbar short of
+         full width. overflow-x: hidden also guards against any one
+         element (even briefly, mid-layout) pushing the whole page wider
+         than the viewport, which throws off every percentage below it. */
+      html, body {
+        height: 100%;
+        width: 100%;
+        margin: 0;
+        overflow-x: hidden;
+      }
+
+      /* ── Force height through bslib's sidebar layout at every width ────
+         layout_sidebar() switches the sidebar to an overlay below bslib's
+         own internal breakpoint, and that switch is handled entirely by
+         bslib's own CSS - the html-fill-item/html-fill-container classes
+         added to our own map div/card further below only cascade height
+         DOWN from an ancestor that already has one. If this ancestor
+         (bslib's own grid/main wrapper) loses its definite height at that
+         breakpoint, nothing below it can recover it. Forcing it here
+         directly, at every width, is the actual fix for the map
+         collapsing specifically when the window narrows past that point. */
+      .bslib-sidebar-layout {
+        height: 100% !important;
+        min-height: 0 !important;
+      }
+      .bslib-sidebar-layout > .main {
+        height: 100% !important;
+        min-height: 0 !important;
+      }
+
       /* ── Navbar: tall navy logo band + maize nav-link band underneath ──
          (mirrors the Ginsberg Center site's own header structure) */
       .navbar {
+        width: 100%;
         padding: 0 !important;
         box-shadow: 0 2px 10px rgba(0,0,0,0.18);
       }
@@ -999,6 +1061,31 @@ ui <- page_navbar(
         if (!el) return;
         el.classList.toggle('open', open);
       });
+
+      // Leaflet measures its container's size once, the moment it first
+      // renders, and caches it - it does NOT notice on its own if that
+      // size was wrong or changes later. On mobile, this app's layout
+      // (collapsible sidebar, navbar that wraps to two rows, bslib's
+      // fillable height calculation) can still be settling after Leaflet's
+      // first render, which is what was collapsing the map to near-zero
+      // height. Telling it to re-measure on resize/orientation change,
+      // and once more shortly after load to catch that initial settling,
+      // fixes both - sized correctly from here on regardless of when the
+      // surrounding layout actually finishes.
+      function fixMapSize() {
+        var widget = HTMLWidgets.find('#map');
+        if (!widget || !widget.getMap) return;
+        var map = widget.getMap();
+        if (map) map.invalidateSize();
+      }
+      $(document).ready(function() {
+        setTimeout(fixMapSize, 400);
+        setTimeout(fixMapSize, 1000);
+      });
+      $(window).on('resize orientationchange', function() {
+        setTimeout(fixMapSize, 200);
+        setTimeout(fixMapSize, 600);
+      });
     "))
   ),
   
@@ -1136,9 +1223,11 @@ ui <- page_navbar(
           tags$p(style = "font-size: 15px;color:#bbb;font-style:italic;", "No match data available yet.")
       ),
       div(
-        style = "position:relative; height:100%; display:flex;",
+        class = "html-fill-item html-fill-container",
+        style = "position:relative; height:100%; display:flex; min-height:0;",
         card(
-          full_screen = TRUE, style = "flex:1; min-width:0;",
+          class = "html-fill-item",
+          full_screen = TRUE, style = "flex:1; min-width:0; min-height:0;",
           leafletOutput("map", height = "100%")
         ),
         tags$div(
@@ -1204,7 +1293,7 @@ ui <- page_navbar(
                 c("Category 1\u20139", "Up to nine Community Priority tags per org, from the new accounts export's picklist. Already at the right granularity for map coloring/filtering, so each is used directly (see Community Priority Groups below) rather than rolled up further."),
                 c("Website", "Joined in from a separate file, websites.csv, by account name."),
                 c("Latitude / Longitude", "Geocoded coordinates. A few rows had missing/bad source addresses that geocoded to bogus points; those are either manually corrected or, if no address exists at all, excluded from the map and listed on the \u201cAccounts with No Geographic Data\u201d tab instead."),
-                c("Total Matches", "Coming soon. Whole-number count of matches per org, to be added from Salesforce."),
+                c("Total Matches", "Whole-number count of matches per org, from Salesforce."),
                 c("Created Date (\u201cPartner Since\u201d)", "Date the org was added to Salesforce, shown as just the year in the \u201cPartner Since\u201d field.")
               ))
             ),
@@ -1679,11 +1768,13 @@ server <- function(input, output, session) {
     
     org_projects <- projects_agg |> filter(Org == org_name) |> arrange(FY, Project)
     
+    has_zip <- !is.na(org$Billing.Zip.Postal.Code) && org$Billing.Zip.Postal.Code != ""
     addr_parts <- c(
       org$Billing.Address.Line.1,
       if (!is.na(org$Billing.Address.Line.2) && org$Billing.Address.Line.2 != "NA")
         org$Billing.Address.Line.2,
-      paste0(org$Billing.City, ", ", org$Billing.State.Province, " ", org$Billing.Zip.Postal.Code)
+      paste0(org$Billing.City, ", ", org$Billing.State.Province,
+             if (has_zip) paste0(" ", org$Billing.Zip.Postal.Code))
     )
     addr <- paste(addr_parts[addr_parts != "" & !is.na(addr_parts)], collapse = "\n")
     
