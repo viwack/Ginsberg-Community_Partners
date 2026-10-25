@@ -64,15 +64,24 @@ orgs <- orgs |>
 
 # Remaining accounts that still have no usable address on file.
 no_geo_names <- c(
-  "Resource Generation", "Justice InDeed",
-  "The Equitable Ann Arbor Land Trust",
+  "Acts of Change Network- Peacenic", "Association of Businesses of Color (Ypsilanti)",
+  "Resource Generation", "Justice InDeed", "Ballmer Group",
+  "Coalition for Re-envisioning Our Safety", "Community Participatory Defense Team - Washtenaw",
+  "The Equitable Ann Arbor Land Trust", "Buenos Vecinos", 
   "Our Village", "National Wild Turkey Federation - Michigan State Chapter",
   "Breyko", "Reproductive Freedom for All - Michigan", "Depot Town Events",
   "Concert Music Outreach Collective", "Superhero Training Academy",
-  "Voce Velata", "Greater Health Institute", "Laotian American Community of Michigan",
-  "FutureRoot", "Huron Valley Worker Organizing and Research Center"
+  "Voce Velata", "Laotian American Community of Michigan",
+  "FutureRoot", "Huron Valley Worker Organizing and Research Center",
+  "Detroit VITALS (Virtual Intersystem Telemedicine and Lifestyles Services)",
+  "Elite Level Athlete", "Healthy Dearborn (Beaumont Health)", 
+  "Liberate Don't Incarcerate", "Neighbors for More Neighbors, Ann Arbor",
+  "Next Chapter Bookclub of Saline", "Office of Migrant Affairs",
+  "Peace Players: Detroit", "Power of Predestiny Ministries",
+  "Rescue Mi Nature Now", "Washtenaw Association of Volunteer Coordinators",
+  "What's Left Ypsilanti", "YpsiNICE", "Ypsi Can I Share", "Empact",
+  "Kingdom Builders", "Lesbian Media Club", "L√≠deres de la Comunidad"
 )
-
 # ── Upcoming fields (not in the data yet) ──────────────────────────────────
 # A field  coming later: a whole-number "total matches" count per org.
 if (!"Total.Matches" %in% names(orgs)) {
@@ -149,24 +158,6 @@ skill_to_group <- setNames(
 
 # ── Projects ──────────────────────────────────────────────────────────────────
 
-# ── Org name lookup: resolve matches-file abbreviations to real account
-#    names, using the old tracking workbook's "Initiative Account" column
-#    as the source of truth wherever the same match still exists there. ──
-build_org_lookup <- function(xlsx_path = "Mapping CP Network.xlsx") {
-  read_one <- function(sheet) {
-    read_xlsx(xlsx_path, sheet = sheet) |>
-      select(`Match: Match Name`, `Initiative Account`)
-  }
-  bind_rows(read_one("FY25"), read_one("FY26")) |>
-    distinct(`Match: Match Name`, .keep_all = TRUE)
-}
-
-# A few matches in the new file aren't in the old workbook at all, so there's no Initiative Account to borrow.
-org_overrides <- c(
-  "HRWC" = "Huron River Watershed Council",
-  "RGI"  = "Refugee Garden Initiatives"
-)
-
 # Derives a fiscal year label (e.g. "FY25") from a completed-match date -
 # fiscal year runs July-June, so a date in Sept 2024 is FY25.
 fy_label <- function(d) {
@@ -176,20 +167,19 @@ fy_label <- function(d) {
   ifelse(is.na(d), NA_character_, paste0("FY", sprintf("%02d", fy_end %% 100)))
 }
 
-load_matches <- function(path = "Matches_Final.csv",
-                         xlsx_path = "Mapping CP Network.xlsx") {
+load_matches <- function(path = "Matches_Final.csv") {
   raw <- read.csv(path, check.names = FALSE)
   
   blank <- is.na(names(raw)) | names(raw) == ""
   if (any(blank)) names(raw)[blank] <- paste0("blank_col_", seq_len(sum(blank)))
   
-  org_lookup <- build_org_lookup(xlsx_path)
-  
+  # Account Name is already fully resolved by data_processing.R (match-ID
+  # join against the old lookup, manual overrides, name corrections,
+  # district fallback) by the time it lands in this file - no need to
+  # redo any of that here.
   raw <- raw |>
-    left_join(org_lookup, by = "Match: Match Name") |>
     mutate(
-      abbrev    = trimws(sub(":.*$", "", `Initiative: Initiative Name`)),
-      Org       = coalesce(`Initiative Account`, unname(org_overrides[abbrev]), abbrev),
+      Org       = `Account Name`,
       Project   = `Initiative: Initiative Name`,
       Completed = parse_flexible_date(`Match Completed Date`),
       FY        = fy_label(Completed)
@@ -262,8 +252,11 @@ map_orgs <- orgs |>
   filter(!is.na(latitude), !is.na(longitude), !(Account.Name %in% no_geo_names))
 
 # Accounts with no usable geographic data - shown in their own tab instead
+orgs_with_fy2526_match <- unique(projects$Org[projects$FY %in% c("FY25", "FY26")])
+
 problem_orgs <- orgs |>
   filter(Account.Name %in% no_geo_names) |>
+  mutate(has_recent_match = Account.Name %in% orgs_with_fy2526_match) |>
   arrange(Account.Name)
 
 # ── Filter choices ──────────────────────────────────────────────────────────
@@ -1253,6 +1246,12 @@ ui <- page_navbar(
         width   = 390,
         open    = list(desktop = "open", mobile = "closed"),
         padding = "16px",
+        tags$p(class = "sidebar-section-label", style = "margin:0 0 4px 0;", "Has FY25/26 matches?"),
+        radioButtons(
+          "problem_match_filter", label = NULL,
+          choices = c("All", "Yes", "No"), selected = "All", inline = TRUE
+        ),
+        tags$hr(style = "margin: 14px 0; border-color: #e8edf2;"),
         uiOutput("problem_org_panel")
       ),
       card(
@@ -1261,8 +1260,8 @@ ui <- page_navbar(
         card_body(
           tags$p(
             style = "font-size: 15px; color:#888; margin-bottom:12px; line-height:1.45;",
-            "These accounts don't have a usable address on file, so they can't be placed on the map yet. ",
-            "Click a row to see their details and matched projects."
+            "These accounts don't have a physical address on file, so they can't be placed on the map. ",
+            "Click on a row to see their details and matched projects."
           ),
           DTOutput("problem_table")
         )
@@ -1480,7 +1479,7 @@ ui <- page_navbar(
           tags$div(class = "infographic-section-title", style = "margin-top:24px;", "Credits"),
           field_table(list(
             c("Built by:", "\u201cGinsberg Center Data & Evaluation Team\u201d"),
-            c("Data sources:", "Salesforce account records; the FY25\u2013FY26 match-tracking spreadsheet (\u201cMapping CP Network.xlsx\u201d)"),
+            c("Data sources:", "Salesforce account records; the FY25\u2013FY26 match-tracking workbook (\u201cMatches (for GC Map).xlsx\u201d)"),
             c("Categorization:", "Community Priority and Skill Area groupings developed in partnership with Ginsberg Center staff (see Data Dictionary tab)"),
             c("Design:", "Built to the Ginsberg Center / University of Michigan brand style guide"),
             c("Built with:", "R, Shiny, leaflet, plotly, bslib, and DT"),
@@ -1984,9 +1983,23 @@ server <- function(input, output, session) {
   # ── No-geo-data tab: table + detail panel ────────────────────────────────
   selected_problem_org <- reactiveVal(NULL)
   
+  # The table render and the row-selection handler both need to agree on
+  # exactly which rows are showing - row_selected gives a position within
+  # whatever's currently rendered, not within the full problem_orgs, so
+  # both read from this one reactive instead of each filtering separately
+  # (which is what let them drift out of sync and select the wrong org).
+  filtered_problem_orgs <- reactive({
+    filtered <- problem_orgs
+    if (!is.null(input$problem_match_filter) && input$problem_match_filter != "All") {
+      filtered <- filtered |>
+        filter(has_recent_match == (input$problem_match_filter == "Yes"))
+    }
+    filtered
+  })
+  
   output$problem_table <- renderDT({
     datatable(
-      problem_orgs |>
+      filtered_problem_orgs() |>
         transmute(
           `Account Name`   = Account.Name,
           `Partner Status` = ifelse(is.na(Ginsberg.Partner.Status) | Ginsberg.Partner.Status == "",
@@ -2005,7 +2018,7 @@ server <- function(input, output, session) {
     if (length(sel) == 0) {
       selected_problem_org(NULL)
     } else {
-      selected_problem_org(problem_orgs$Account.Name[sel])
+      selected_problem_org(filtered_problem_orgs()$Account.Name[sel])
     }
   })
   
